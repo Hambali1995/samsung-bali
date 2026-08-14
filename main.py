@@ -8,7 +8,14 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 TOKEN = os.getenv("TOKEN") or os.getenv("BOT_TOKEN")
 GREEN_API_ID = os.getenv("GREEN_API_ID", "710722705231")
 GREEN_API_TOKEN = os.getenv("GREEN_API_TOKEN")
-ADMIN_IDS = [7962377902, 8538844365, 8877282096]
+ADMIN_IDS_STR = os.getenv("ADMIN_IDS") or os.getenv("TELEGRAM_ADMIN_ID") or ""
+if ADMIN_IDS_STR:
+    try:
+        ADMIN_IDS = [int(x.strip()) for x in ADMIN_IDS_STR.replace(";",",").split(",") if x.strip().isdigit()]
+    except:
+        ADMIN_IDS = [7962377902, 8538844365, 8877282096]
+else:
+    ADMIN_IDS = [7962377902, 8538844365, 8877282096]
 DB_FILE = "bot_database.json"
 DB_FILE_PERSISTENT = "/data/bot_database.json"
 WA_HISTORY_FILE = "wa_history.json"
