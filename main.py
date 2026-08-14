@@ -918,8 +918,17 @@ def index():
 @flask_app.route(f"/{TOKEN}", methods=["POST"])
 def telegram_webhook():
     try:
-        update = Update.de_json(request.get_json(force=True), application.bot)
-        loop.create_task(application.process_update(update))
+        data = request.get_json(force=True)
+        if not data:
+            return "ok"
+        update = Update.de_json(data, application.bot)
+        # FIX: pakai run_until_complete biar pasti keproses di Railway
+        try:
+            loop.run_until_complete(application.process_update(update))
+        except:
+            # fallback kalau loop udah running
+            import asyncio
+            asyncio.run(application.process_update(update))
         return "ok"
     except Exception as e:
         print(f"Webhook error: {e}")
