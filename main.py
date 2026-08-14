@@ -8,7 +8,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 TOKEN = os.getenv("TOKEN") or os.getenv("BOT_TOKEN")
 GREEN_API_ID = os.getenv("GREEN_API_ID", "710722705231")
 GREEN_API_TOKEN = os.getenv("GREEN_API_TOKEN")
-ADMIN_IDS = [7962377902, 8538844365]
+ADMIN_IDS = [7962377902, 8538844365, 8877282096]
 DB_FILE = "bot_database.json"
 DB_FILE_PERSISTENT = "/data/bot_database.json"
 WA_HISTORY_FILE = "wa_history.json"
@@ -876,15 +876,51 @@ async def cmd_backup(update,context):
     except Exception as e:
         await update.message.reply_text(f"❌ Backup fail: {e}",reply_markup=kb_main(uid))
 
-def run_bot():
-    print(f"🤖 BOT PROFESIONAL - Green API {GREEN_API_ID} - Port {PORT} 🚀")
-    app=Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start",start)); app.add_handler(CommandHandler("profil",cmd_profil)); app.add_handler(CommandHandler("status",cmd_status)); app.add_handler(CommandHandler("cek", cmd_cek)); app.add_handler(CommandHandler("backup", cmd_backup))
-    app.add_handler(CallbackQueryHandler(cb_handler)); app.add_handler(MessageHandler(filters.CONTACT,contact_handler)); app.add_handler(MessageHandler(filters.PHOTO,foto_handler)); app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,text_handler))
-    app.run_polling(drop_pending_updates=True,allowed_updates=Update.ALL_TYPES)
+# ========== FIX RAILWAY WEBHOOK MODE ==========
+flask_app = Flask(__name__)
+application = Application.builder().token(TOKEN).build()
 
-def run_flask():
-    flask_app.run(host="0.0.0.0",port=PORT,debug=False,use_reloader=False)
-def main():
-    flask_thread=threading.Thread(target=run_flask,daemon=True); flask_thread.start(); run_bot()
-if __name__=="__main__": main()
+application.add_handler(CommandHandler("start",start))
+application.add_handler(CommandHandler("profil",cmd_profil))
+application.add_handler(CommandHandler("status",cmd_status))
+application.add_handler(CommandHandler("cek", cmd_cek))
+application.add_handler(CommandHandler("backup", cmd_backup))
+application.add_handler(CallbackQueryHandler(cb_handler))
+application.add_handler(MessageHandler(filters.CONTACT,contact_handler))
+application.add_handler(MessageHandler(filters.PHOTO,foto_handler))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,text_handler))
+
+import asyncio
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
+async def setup_webhook():
+    await application.initialize()
+    await application.start()
+    url = RAILWAY_URL if RAILWAY_URL.startswith("http") else f"https://{RAILWAY_URL}"
+    webhook_url = f"{url}/{TOKEN}"
+    print(f"Setting webhook to {webhook_url}")
+    await application.bot.set_webhook(url=webhook_url, drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+
+loop.run_until_complete(setup_webhook())
+
+@flask_app.route("/")
+def index():
+    return "Bot Active - Webhook Mode"
+
+@flask_app.route(f"/{TOKEN}", methods=["POST"])
+def telegram_webhook():
+    try:
+        update = Update.de_json(request.get_json(force=True), application.bot)
+        loop.create_task(application.process_update(update))
+        return "ok"
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        return "ok"
+
+# Biarkan route Green API kamu yang lama tetap ada
+# @flask_app.route("/waWebhook" ...) jangan dihapus
+
+if __name__ == "__main__":
+    print(f"🚀 WEBHOOK MODE - Port {PORT}")
+    flask_app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
