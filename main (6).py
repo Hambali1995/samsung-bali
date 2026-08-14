@@ -6,7 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKe
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 TOKEN = os.getenv("TOKEN") or os.getenv("BOT_TOKEN")
-GREEN_API_ID = os.getenv("GREEN_API_ID", "710722702510")
+GREEN_API_ID = os.getenv("GREEN_API_ID", "710722705231")
 GREEN_API_TOKEN = os.getenv("GREEN_API_TOKEN")
 ADMIN_IDS = [7962377902, 8538844365]
 DB_FILE = "bot_database.json"
@@ -14,7 +14,7 @@ DB_FILE_PERSISTENT = "/data/bot_database.json"
 WA_HISTORY_FILE = "wa_history.json"
 WA_HISTORY_PERSISTENT = "/data/wa_history.json"
 PORT = int(os.getenv("PORT", 8080))
-RAILWAY_URL = "https://worker-production-ea4b.up.railway.app"
+RAILWAY_URL = ""
 
 REKENING_TEXT = """
 💳 TOP UP SALDO 
