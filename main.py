@@ -17,7 +17,7 @@ if ADMIN_IDS_STR:
     try:
         ADMIN_IDS = [int(x.strip()) for x in ADMIN_IDS_STR.replace(";",",").split(",") if x.strip().isdigit()]
     except:
-        ADMIN_IDS = [7962377902, 8538844365, 8877282096]
+        ADMIN_IDS = [7962377902, 8877282096]
 else:
     ADMIN_IDS = [7962377902, 8877282096]
 
