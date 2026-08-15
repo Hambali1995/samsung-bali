@@ -1,0 +1,1540 @@
+# -*- coding: utf-8 -*-
+import os, json, requests, threading, re, logging
+from datetime import datetime, timedelta
+from flask import Flask, request
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+TOKEN = os.getenv("TOKEN") or os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+GREEN_API_ID = os.getenv("GREEN_API_ID", "710722705231")
+GREEN_API_TOKEN = os.getenv("GREEN_API_TOKEN")
+ADMIN_IDS_STR = os.getenv("ADMIN_IDS") or os.getenv("TELEGRAM_ADMIN_ID") or ""
+if ADMIN_IDS_STR:
+    try:
+        ADMIN_IDS = [int(x.strip()) for x in ADMIN_IDS_STR.replace(";",",").split(",") if x.strip().isdigit()]
+    except:
+        ADMIN_IDS = [7962377902, 8538844365, 8877282096]
+else:
+    ADMIN_IDS = [7962377902, 8538844365, 8877282096]
+
+DB_FILE = "bot_database.json"
+DB_FILE_PERSISTENT = "/data/bot_database.json"
+WA_HISTORY_FILE = "wa_history.json"
+WA_HISTORY_PERSISTENT = "/data/wa_history.json"
+PORT = int(os.getenv("PORT", 8080))
+RAILWAY_URL = "https://samsung-bali-production.up.railway.app"
+
+# ========== SUPABASE / PASADATA ==========
+# Tabel: bot_data
+# Kolom yang dipakai: id (int8), data_json (jsonb)
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SUPABASE_TABLE = "bot_data"
+
+def supabase_headers():
+    return {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+
+def supabase_enabled():
+    return bool(SUPABASE_URL and SUPABASE_KEY)
+
+def load_db_from_supabase():
+    """Ambil database utama dari tabel bot_data.data_json."""
+    if not supabase_enabled():
+        return None
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}"
+        params = {"select": "id,data_json", "order": "id.asc", "limit": "1"}
+        r = requests.get(url, headers=supabase_headers(), params=params, timeout=15)
+        r.raise_for_status()
+        rows = r.json()
+        if not rows:
+            return None
+        payload = rows[0].get("data_json")
+        if not payload:
+            return None
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        if not isinstance(payload, dict):
+            logger.error("Supabase data_json bukan object JSON")
+            return None
+        return payload
+    except Exception as e:
+        logger.error(f"Supabase LOAD ERROR: {type(e).__name__}: {e}")
+        return None
+
+def save_db_to_supabase(data):
+    """Simpan seluruh state bot ke satu baris data_json."""
+    if not supabase_enabled():
+        return False
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}"
+        params = {"select": "id", "order": "id.asc", "limit": "1"}
+        r = requests.get(url, headers=supabase_headers(), params=params, timeout=15)
+        r.raise_for_status()
+        rows = r.json()
+
+        body = {"data_json": data}
+        if rows:
+            row_id = rows[0]["id"]
+            r = requests.patch(
+                f"{url}?id=eq.{row_id}",
+                headers=supabase_headers(),
+                json=body,
+                timeout=15,
+            )
+        else:
+            r = requests.post(url, headers=supabase_headers(), json=body, timeout=15)
+        r.raise_for_status()
+        return True
+    except Exception as e:
+        logger.error(f"Supabase SAVE ERROR: {type(e).__name__}: {e}")
+        return False
+
+REKENING_TEXT = """
+💳 TOP UP SALDO 
+
+🏦 SEABANK
+   901040978290 - HAMBALI
+
+💰 DANA
+   083824101264 - HAMBALI
+
+💳 GOPAY
+   083824101264 - HAMBALI
+
+📸 Kirim foto bukti transfer di sini ya bos!
+"""
+
+PAKET_TAMBAH = {
+    "1minggu": {"nama": "1 MINGGU", "harga": 50000, "hari": 7},
+    "1bulan": {"nama": "1 BULAN", "harga": 150000, "hari": 30},
+    "2bulan": {"nama": "2 BULAN", "harga": 250000, "hari": 60},
+}
+PAKET_CARI = {
+    "1minggu": {"nama": "1 MINGGU", "harga": 15000, "hari": 7},
+    "1bulan": {"nama": "1 BULAN", "harga": 50000, "hari": 30},
+    "2bulan": {"nama": "2 BULAN", "harga": 100000, "hari": 60},
+}
+
+LIST_PROVINSI = [
+    {"id": "11", "nama": "ACEH"}, {"id": "12", "nama": "SUMATERA UTARA"}, {"id": "13", "nama": "SUMATERA BARAT"},
+    {"id": "14", "nama": "RIAU"}, {"id": "15", "nama": "JAMBI"}, {"id": "16", "nama": "SUMATERA SELATAN"},
+    {"id": "17", "nama": "BENGKULU"}, {"id": "18", "nama": "LAMPUNG"}, {"id": "19", "nama": "KEP. BANGKA BELITUNG"},
+    {"id": "21", "nama": "KEP. RIAU"}, {"id": "31", "nama": "DKI JAKARTA"}, {"id": "32", "nama": "JAWA BARAT"},
+    {"id": "33", "nama": "JAWA TENGAH"}, {"id": "34", "nama": "DI YOGYAKARTA"}, {"id": "35", "nama": "JAWA TIMUR"},
+    {"id": "36", "nama": "BANTEN"}, {"id": "51", "nama": "BALI"}, {"id": "52", "nama": "NUSA TENGGARA BARAT"},
+    {"id": "53", "nama": "NUSA TENGGARA TIMUR"}, {"id": "61", "nama": "KALIMANTAN BARAT"},
+    {"id": "62", "nama": "KALIMANTAN TENGAH"}, {"id": "63", "nama": "KALIMANTAN SELATAN"},
+    {"id": "64", "nama": "KALIMANTAN TIMUR"}, {"id": "65", "nama": "KALIMANTAN UTARA"},
+    {"id": "71", "nama": "SULAWESI UTARA"}, {"id": "72", "nama": "SULAWESI TENGAH"}, {"id": "73", "nama": "SULAWESI SELATAN"},
+    {"id": "74", "nama": "SULAWESI TENGGARA"}, {"id": "75", "nama": "GORONTALO"}, {"id": "76", "nama": "SULAWESI BARAT"},
+    {"id": "81", "nama": "MALUKU"}, {"id": "82", "nama": "MALUKU UTARA"}, {"id": "91", "nama": "PAPUA"},
+    {"id": "92", "nama": "PAPUA BARAT"}, {"id": "93", "nama": "PAPUA SELATAN"}, {"id": "94", "nama": "PAPUA TENGAH"},
+    {"id": "95", "nama": "PAPUA PEGUNGAN"}, {"id": "96", "nama": "PAPUA BARAT DAYA"},
+]
+
+def load_db():
+    # PasaData/Supabase adalah database utama jika env tersedia.
+    remote = load_db_from_supabase()
+    if remote is not None:
+        data = remote
+        if "langganan" not in data: data["langganan"] = {}
+        if "langganan_cari" not in data: data["langganan_cari"] = {}
+        if "blacklist" not in data: data["blacklist"] = []
+        if "pending_hapus_kota" not in data: data["pending_hapus_kota"] = []
+        if "user_info" not in data: data["user_info"] = {}
+        for uid, subs in data["langganan"].items():
+            if isinstance(subs, list):
+                for item in subs:
+                    if item.get("expire"):
+                        try: item["expire"] = datetime.fromisoformat(item["expire"])
+                        except: item["expire"] = None
+            elif isinstance(subs, dict):
+                if subs.get("expire"):
+                    try: subs["expire"] = datetime.fromisoformat(subs["expire"])
+                    except: subs["expire"] = None
+                data["langganan"][uid] = [subs]
+        return data
+
+    # Fallback hanya jika Supabase belum dikonfigurasi/gagal.
+    for p in [DB_FILE_PERSISTENT, DB_FILE]:
+        try:
+            if os.path.exists(p):
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if "langganan" not in data: data["langganan"] = {}
+                if "langganan_cari" not in data: data["langganan_cari"] = {}
+                if "blacklist" not in data: data["blacklist"] = []
+                if "pending_hapus_kota" not in data: data["pending_hapus_kota"] = []
+                if "user_info" not in data: data["user_info"] = {}
+                for uid, subs in data["langganan"].items():
+                    if isinstance(subs, list):
+                        for item in subs:
+                            if item.get("expire"):
+                                try: item["expire"] = datetime.fromisoformat(item["expire"])
+                                except: item["expire"] = None
+                    elif isinstance(subs, dict):
+                        if subs.get("expire"):
+                            try: subs["expire"] = datetime.fromisoformat(subs["expire"])
+                            except: subs["expire"] = None
+                        data["langganan"][uid] = [subs]
+                return data
+        except Exception as e:
+            logger.error(f"Local DB LOAD ERROR: {e}")
+            continue
+    return {"user_info": {}, "langganan": {}, "langganan_cari": {}, "blacklist": [], "pending_hapus_kota": []}
+
+def save_db():
+    # Buat salinan serializable tanpa merusak datetime yang dipakai runtime.
+    tmp = json.loads(json.dumps(db, default=str))
+
+    # Simpan ke PasaData/Supabase sebagai sumber utama.
+    remote_ok = save_db_to_supabase(tmp)
+
+    # JSON lokal tetap disimpan sebagai backup/fallback.
+    try:
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(tmp, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Local DB SAVE ERROR: {e}")
+    try:
+        os.makedirs(os.path.dirname(DB_FILE_PERSISTENT), exist_ok=True)
+        with open(DB_FILE_PERSISTENT, "w", encoding="utf-8") as f:
+            json.dump(tmp, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Persistent DB SAVE ERROR: {e}")
+
+    if supabase_enabled() and not remote_ok:
+        logger.warning("⚠️ Supabase gagal disimpan; JSON lokal masih tersimpan sebagai backup")
+    return remote_ok if supabase_enabled() else True
+
+def normalize_number(num):
+    clean=''.join(filter(str.isdigit, str(num)))
+    if not clean: return None
+    if clean.startswith("62"):
+        clean="0"+clean[2:]
+    if clean.startswith("8"):
+        clean="0"+clean
+    return clean if len(clean)>=9 else None
+
+def add_blacklist(num):
+    clean=normalize_number(num)
+    if not clean: return False, None
+    if "blacklist" not in db: db["blacklist"]=[]
+    if clean in db["blacklist"]:
+        return False, clean
+    alt="62"+clean[1:] if clean.startswith("0") else clean
+    if alt in db["blacklist"]:
+        return False, clean
+    db["blacklist"].append(clean)
+    db["blacklist"]=list(dict.fromkeys(db["blacklist"]))
+    save_db()
+    return True, clean
+
+def load_wa_history():
+    for p in [WA_HISTORY_PERSISTENT, WA_HISTORY_FILE]:
+        try:
+            if os.path.exists(p):
+                with open(p, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except: continue
+    return []
+
+def save_wa_history(h):
+    try:
+        if len(h)>10000: h=h[-10000:]
+        with open(WA_HISTORY_FILE, "w", encoding="utf-8") as f: json.dump(h,f,indent=2,ensure_ascii=False)
+        try:
+            os.makedirs(os.path.dirname(WA_HISTORY_PERSISTENT), exist_ok=True)
+            with open(WA_HISTORY_PERSISTENT, "w", encoding="utf-8") as f: json.dump(h,f,indent=2,ensure_ascii=False)
+        except: pass
+    except: pass
+
+db = load_db()
+# Jika Supabase aktif tetapi tabel masih kosong, seed dari DB yang sedang dipakai.
+if supabase_enabled() and load_db_from_supabase() is None:
+    save_db_to_supabase(json.loads(json.dumps(db, default=str)))
+flask_app = Flask(__name__)
+
+def check_location_match(text_upper, kotas):
+    """Cek apakah teks mengandung salah satu wilayah yang dipilih user"""
+    for k in kotas:
+        parts = [p.strip() for p in k.split("|")]
+        if len(parts) < 3:
+            continue
+        
+        kab_clean = parts[1].upper().replace("KABUPATEN ", "").replace("KOTA ", "").strip()
+        kec_clean = parts[2].upper().strip()
+        
+        # Cek untuk "Semua Kecamatan"
+        if kec_clean == "SEMUA KECAMATAN":
+            # Jika user pilih semua kecamatan, cek hanya kabupaten/kota
+            if len(kab_clean) >= 3 and kab_clean in text_upper:
+                return True, f"{parts[1]} | {parts[2]}"
+        else:
+            # Cek kecocokan kabupaten dan kecamatan
+            if len(kab_clean) >= 3 and len(kec_clean) >= 3:
+                if kab_clean in text_upper and kec_clean in text_upper:
+                    return True, f"{parts[1]} | {parts[2]}"
+    return False, ""
+
+def send_tg_message(chat_id, text, wa_number=None):
+    if not TOKEN:
+        logger.error("TG ERROR: TOKEN kosong")
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        reply_markup = None
+        if wa_number:
+            # Format nomor untuk link WA
+            clean = ''.join(filter(str.isdigit, wa_number))
+            if clean.startswith("0"):
+                clean = "62" + clean[1:]
+            elif not clean.startswith("62"):
+                clean = "62" + clean
+            if len(clean) >= 10:
+                reply_markup = {"inline_keyboard": [[
+                    {"text": "💬 Chat Pengirim di WA", "url": f"https://wa.me/{clean}"}
+                ]]}
+
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "disable_web_page_preview": True,
+            "parse_mode": "Markdown"
+        }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+
+        r = requests.post(url, json=payload, timeout=10)
+        if not r.ok:
+            logger.error(f"TG SEND ERROR chat_id={chat_id} status={r.status_code} body={r.text[:500]}")
+            # Coba kirim tanpa parse_mode
+            if "parse_mode" in payload:
+                del payload["parse_mode"]
+                r2 = requests.post(url, json=payload, timeout=10)
+                if r2.ok:
+                    return True
+            return False
+        return True
+    except Exception as e:
+        logger.error(f"TG SEND EXCEPTION chat_id={chat_id}: {type(e).__name__}: {e}")
+        return False
+
+@flask_app.route("/whatsapp-webhook", methods=["POST"])
+def whatsapp_webhook():
+    try:
+        data = request.get_json(force=True, silent=True)
+        if not data:
+            return "ok", 200
+        
+        # AMBIL DATA DARI GREEN API FORMAT
+        sender_data = data.get("senderData", {}) or {}
+        message_data = data.get("messageData", {}) or {}
+        
+        sender_number = ""
+        if sender_data.get("sender"):
+            sender_number = sender_data.get("sender")
+        elif sender_data.get("chatId"):
+            sender_number = sender_data.get("chatId")
+        elif message_data.get("sender"):
+            sender_number = message_data.get("sender")
+        
+        # Clean nomor
+        if "@" in sender_number:
+            sender_number = sender_number.split("@")[0]
+        sender_number = ''.join(filter(str.isdigit, sender_number))
+        
+        # Format nomor (0xxx)
+        if sender_number.startswith("62"):
+            sender_number_formatted = "0" + sender_number[2:]
+        else:
+            sender_number_formatted = sender_number
+        
+        group_name = sender_data.get("chatName") or sender_data.get("chatId") or "Grup WA"
+        sender_name = sender_data.get("senderName") or sender_data.get("senderContactName") or "Pengirim WA"
+        
+        # Ambil teks pesan
+        text = ""
+        ttype = data.get("typeMessage", "")
+        
+        # Coba ambil dari berbagai format
+        if ttype == "textMessage":
+            text = message_data.get("textMessageData", {}).get("textMessage", "")
+        elif ttype == "extendedTextMessage":
+            text = message_data.get("extendedTextMessageData", {}).get("text", "")
+        elif ttype == "imageMessage":
+            text = message_data.get("imageMessageData", {}).get("caption", "")
+        elif ttype == "documentMessage":
+            text = message_data.get("documentMessageData", {}).get("caption", "")
+        elif ttype == "audioMessage":
+            text = "🎵 *Pesan Suara*"
+        elif ttype == "videoMessage":
+            text = "🎬 *Pesan Video*"
+        else:
+            if "textMessageData" in message_data:
+                text = message_data["textMessageData"].get("textMessage", "")
+            elif "extendedTextMessageData" in message_data:
+                text = message_data["extendedTextMessageData"].get("text", "")
+            elif "caption" in message_data:
+                text = message_data.get("caption", "")
+        
+        if not text:
+            return "ok", 200
+        
+        # Bersihkan text dari HTML/XML tags
+        clean_text = re.sub(r'<[^>]+>', '', text)
+        text_upper = clean_text.upper()
+        
+        # Simpan ke history
+        try:
+            history = load_wa_history()
+            history.append({
+                "group": group_name,
+                "sender": sender_name,
+                "number": sender_number_formatted,
+                "text": clean_text,
+                "time": datetime.now().isoformat()
+            })
+            save_wa_history(history)
+        except Exception as e:
+            logger.error(f"History save error: {e}")
+        
+        # Load fresh DB dari PasaData/Supabase supaya perubahan user/langganan
+        # langsung dipakai oleh webhook WhatsApp.
+        fresh_db = load_db_from_supabase()
+        if fresh_db is None:
+            try:
+                with open(DB_FILE_PERSISTENT if os.path.exists(DB_FILE_PERSISTENT) else DB_FILE, "r", encoding="utf-8") as f:
+                    fresh_db = json.load(f)
+            except:
+                fresh_db = {
+                    "user_info": db.get("user_info", {}),
+                    "langganan": db.get("langganan", {}),
+                    "langganan_cari": db.get("langganan_cari", {}),
+                    "blacklist": db.get("blacklist", [])
+                }
+        
+        # Cek blacklist
+        is_blacklisted = sender_number_formatted in fresh_db.get("blacklist", [])
+        if is_blacklisted:
+            return "ok", 200
+        
+        # Proses setiap user
+        matched_users = []
+        now = datetime.now()
+        
+        for uid_str, uinfo in fresh_db.get("user_info", {}).items():
+            try:
+                # Perbaiki paket lama yang belum mempunyai nama kota sebelum pencocokan WA.
+                repair_subscription_cities(int(uid_str), fresh_db)
+                uinfo = fresh_db.get("user_info", {}).get(uid_str, uinfo)
+                uid_int = int(uid_str)
+                
+                # Cek lokasi dan keyword
+                kotas = uinfo.get("kotas", [])
+                custom_keywords = uinfo.get("custom_keywords", [])
+                
+                # Cek kecocokan wilayah
+                is_match, matched_location = check_location_match(text_upper, kotas)
+                
+                # Cek kecocokan keyword
+                is_keyword_match = False
+                matched_keyword = ""
+                for kw in custom_keywords:
+                    if kw.upper() in text_upper:
+                        is_keyword_match = True
+                        matched_keyword = kw
+                        break
+                
+                # === LOGIKA CHECK EXPIRED PER KOTA ===
+                # Ambil langganan user
+                active_kota_names = []
+                user_subs = fresh_db.get("langganan", {}).get(uid_str, [])
+                
+                # Handle format data (bisa list atau dict)
+                if isinstance(user_subs, dict):
+                    user_subs = [user_subs] # Convert legacy
+                
+                if user_subs:
+                    for s in user_subs:
+                        # Konversi string ke datetime
+                        exp_str = s.get("expire", "")
+                        if isinstance(exp_str, str):
+                            try: 
+                                exp = datetime.fromisoformat(exp_str)
+                            except: 
+                                exp = None
+                        else:
+                            exp = exp_str # Sudah object datetime
+                            
+                        # Jika belum expired
+                        if exp and exp > now:
+                            # Ambil nama kota dari paket atau nama kota
+                            # (Asumsi s["kota"] harus disimpan saat top up)
+                            kota_name = s.get("kota", "Paket Aktif")
+                            active_kota_names.append(kota_name.upper())
+                
+                # Cek apakah kota yang match ada di list aktif user
+                if is_match:
+                    # Parse nama kota dari hasil match
+                    matched_kota_name = ""
+                    if "|" in matched_location:
+                        matched_kota_name = matched_location.split("|")[0].strip().upper()
+                    else:
+                        matched_kota_name = matched_location.upper()
+                    
+                    # Cek apakah kota user ada di daftar aktif
+                    is_kota_expired = True # Default expired
+                    for ak in active_kota_names:
+                        if ak in matched_kota_name or matched_kota_name in ak:
+                            is_kota_expired = False 
+                            break
+                    
+                    # Jika kota expired, tapi ada keyword match, tetap kirim (opsional)
+                    if is_kota_expired and not is_keyword_match:
+                        continue # Skip jika kota expired dan gak ada keyword
+                
+                # Kirim notifikasi jika cocok (dan tidak expired)
+                if is_match or is_keyword_match:
+                    matched_users.append(uid_int)
+                    
+                    match_type = f"📍 {matched_location}" if is_match else f"🔑 KEYWORD: {matched_keyword}"
+                    
+                    notes = "\n\n━━━━━━━━━━━━━━━━\n⚠️ *PERHATIAN :*\nTETAP WASPADA DALAM BERTRANSAKSI, UNTUK LEBIH AMAN DISARANKAN GUNAKAN REKBER (REKENING BERSAMA)\nTERIMAKASIH BANYAK ATAS PERHATIANNYA.🙏"
+                    
+                    msg = f"🤖 *INFO SEDULURAN BOT* 🤖\n\n" \
+                          f"🎰 GRUP: {group_name}\n" \
+                          f"👤 PENGIRIM: {sender_name}\n" \
+                          f"📞 NOMOR: {sender_number_formatted}\n" \
+                          f"🔎 MATCH: {match_type}\n\n" \
+                          f"💬 PESAN:\n{clean_text}{notes}"
+                    
+                    # Kirim ke user
+                    success = send_tg_message(uid_int, msg, wa_number=sender_number_formatted)
+                    if success:
+                        logger.info(f"✅ Notifikasi terkirim ke {uid_int} untuk match {match_type}")
+                    else:
+                        logger.error(f"❌ Gagal kirim ke {uid_int}")
+                    
+            except Exception as e:
+                logger.error(f"WA USER PROCESS ERROR uid={uid_str}: {type(e).__name__}: {e}")
+        
+        logger.info(f"Total matched users: {len(matched_users)}")
+        return "ok", 200
+        
+    except Exception as e:
+        logger.error(f"Webhook error: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return "ok", 200
+
+@flask_app.route("/whatsapp-webhook", methods=["GET"])
+def whatsapp_webhook_get():
+    return {
+        "status": "ok",
+        "message": "Webhook WhatsApp aktif",
+        "config": {
+            "green_api_id": GREEN_API_ID,
+            "webhook_url": f"{RAILWAY_URL}/whatsapp-webhook"
+        }
+    }, 200
+
+# ========== FUNGSI BANTUAN BARU ==========
+def is_admin(uid): return uid in ADMIN_IDS
+
+# UBAH FUNGSI CEK EXPIRED PER KOTA
+def is_active_tambah(uid, kota_name=None):
+    if is_admin(uid): return True
+    subs = db["langganan"].get(str(uid), [])
+    if isinstance(subs, dict): subs = [subs]
+    
+    now = datetime.now()
+    if not subs: return False
+    
+    # Jika nama kota dikasih, cek spesifik expired kota itu
+    if kota_name:
+        for s in subs:
+            if s.get("kota", "").upper() == kota_name.upper():
+                exp = s.get("expire")
+                if isinstance(exp, str):
+                    try: exp = datetime.fromisoformat(exp)
+                    except: exp = None
+                return exp and exp > now
+        return False # Kota tidak ditemukan di list
+    else:
+        # Cek apakah user punya minimal 1 langganan aktif
+        for s in subs:
+            exp = s.get("expire")
+            if isinstance(exp, str):
+                try: exp = datetime.fromisoformat(exp)
+                except: exp = None
+            if exp and exp > now:
+                return True
+        return False
+
+def is_active_cari(uid):
+    if is_admin(uid): return True
+    sub = db["langganan_cari"].get(str(uid))
+    return sub and not is_expired(sub)
+
+def is_expired(sub):
+    if not sub: return True
+    exp = sub.get("expire")
+    if isinstance(exp, str):
+        try: exp = datetime.fromisoformat(exp)
+        except: return True
+    return not exp or exp < datetime.now()
+
+def is_user_id_aktif(uid):
+    return is_active_tambah(uid) or is_active_cari(uid)
+
+FORBIDDEN_GEO_EXTRA = {"kabupaten","kota","kecamatan","provinsi","kelurahan","desa"}
+
+def _norm_kw(s): return s.strip().lower()
+
+def is_geo_forbidden(keyword):
+    kw = _norm_kw(keyword)
+    if len(kw) < 3: return True, "Keyword terlalu pendek"
+    for p in LIST_PROVINSI:
+        nama = p["nama"].lower()
+        if kw == nama or kw == nama.replace(" ",""):
+            return True, f"'{keyword}' adalah nama PROVINSI ({p['nama']})"
+        if len(kw) >= 4 and (kw in nama or nama in kw):
+            if len(kw) >= 4:
+                return True, f"'{keyword}' mengandung nama PROVINSI ({p['nama']})"
+    for bad in FORBIDDEN_GEO_EXTRA:
+        if bad in kw:
+            return True, f"Keyword tidak boleh mengandung kata '{bad}' (geografis)"
+    return False, ""
+
+def kb_main(uid):
+    keyboard=[
+        ["👤 PROFIL ","🌍 TAMBAH KOTA "],
+        ["🌠 WILAYAH DIPILIH ","🗑️ HAPUS KOTA SAYA "],
+        ["📊 STATUS LANGGANAN ","💳 TOP UP SALDO "],
+        ["🔎 CARI DATA LAINNYA ","🚀 PILIH KEYWORD "],
+        ["🚫 DAFTAR BLACKLIST ","❓ BANTUAN "],
+        ["🧑‍💻 HUBUNGI ADMIN "],
+    ]
+    if is_admin(uid): keyboard.append(["🧭 PANEL ADMIN "])
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, is_persistent=True)
+
+def kb_provinsi():
+    buttons=[]; row=[]
+    for p in LIST_PROVINSI:
+        row.append(InlineKeyboardButton(f" {p['nama'].title()}", callback_data=f"prov_{p['id']}_{p['nama']}"))
+        if len(row)==2: buttons.append(row); row=[]
+    if row: buttons.append(row)
+    buttons.append([InlineKeyboardButton("⬅️ KEMBALI KE MENU 🏠", callback_data="back_main")])
+    return InlineKeyboardMarkup(buttons)
+
+def get_kota(prov_id):
+    try: r=requests.get(f"https://www.emsifa.com/api-wilayah-indonesia/api/regencies/{prov_id}.json",timeout=10); return r.json()
+    except: return []
+def get_kecamatan(kota_id):
+    try: r=requests.get(f"https://www.emsifa.com/api-wilayah-indonesia/api/districts/{kota_id}.json",timeout=10); return r.json()
+    except: return []
+
+def _unique_selected_cities(uid):
+    entries = db.get("user_info", {}).get(str(uid), {}).get("kotas", [])
+    cities = []
+    for entry in entries:
+        parts = [x.strip() for x in str(entry).split("|")]
+        if len(parts) >= 2 and parts[1] and parts[1] not in cities:
+            cities.append(parts[1])
+    return cities
+
+def repair_subscription_cities(uid, state=None):
+    """Perbaiki paket lama yang belum mempunyai nama kota dari wilayah user."""
+    state = db if state is None else state
+    subs = state.get("langganan", {}).get(str(uid), [])
+    if isinstance(subs, dict):
+        subs = [subs]
+        state["langganan"][str(uid)] = subs
+    if not subs:
+        return False
+    selected_entries = state.get("user_info", {}).get(str(uid), {}).get("kotas", [])
+    selected_cities = []
+    for entry in selected_entries:
+        parts = [x.strip() for x in str(entry).split("|")]
+        if len(parts) >= 2 and parts[1] and parts[1] not in selected_cities:
+            selected_cities.append(parts[1])
+    if not selected_cities:
+        return False
+    placeholders = {"", "TIDAK ADA KOTA", "UMUM", "TIDAK DIKETAHUI", "PAKET AKTIF"}
+    valid_cities = [str(x.get("kota", "")).strip() for x in subs if str(x.get("kota", "")).strip().upper() not in placeholders]
+    changed = False
+    for sub in subs:
+        kota = str(sub.get("kota", "")).strip()
+        if kota.upper() not in placeholders:
+            continue
+        target = next((c for c in selected_cities if c.upper() not in {v.upper() for v in valid_cities}), None)
+        if target:
+            sub["kota"] = target
+            valid_cities.append(target)
+            changed = True
+    return changed
+
+def assign_subscription_to_selected_city(uid, kota):
+    """Hubungkan paket TAMBAH KOTA aktif yang belum dipakai ke kota yang dipilih."""
+    subs = db.get("langganan", {}).get(str(uid), [])
+    if isinstance(subs, dict):
+        subs = [subs]
+        db["langganan"][str(uid)] = subs
+    now = datetime.now()
+    kota = str(kota).strip()
+    if not kota or not subs:
+        return False
+    for sub in subs:
+        existing = str(sub.get("kota", "")).strip()
+        exp = sub.get("expire")
+        if isinstance(exp, str):
+            try: exp = datetime.fromisoformat(exp)
+            except: exp = None
+        if existing and existing.upper() == kota.upper() and exp and exp > now:
+            return False
+    for sub in subs:
+        exp = sub.get("expire")
+        if isinstance(exp, str):
+            try: exp = datetime.fromisoformat(exp)
+            except: exp = None
+        if exp and exp > now and not sub.get("used", False):
+            sub["kota"] = kota
+            sub["used"] = True
+            return True
+    for sub in subs:
+        existing = str(sub.get("kota", "")).strip().upper()
+        if existing in {"", "TIDAK ADA KOTA", "UMUM", "TIDAK DIKETAHUI", "PAKET AKTIF"}:
+            exp = sub.get("expire")
+            if isinstance(exp, str):
+                try: exp = datetime.fromisoformat(exp)
+                except: exp = None
+            if exp and exp > now:
+                sub["kota"] = kota
+                return True
+    return False
+
+async def get_status_text(uid):
+    repaired = repair_subscription_cities(uid)
+    if repaired:
+        save_db()
+    user_data=db["user_info"].get(str(uid),{})
+    jml=len(user_data.get("kotas",[]))
+    subs = db["langganan"].get(str(uid), [])
+    if isinstance(subs, dict): subs = [subs] # Fix legacy
+    sub_cari=db["langganan_cari"].get(str(uid))
+    
+    if is_admin(uid):
+        txt="📊 STATUS LANGGANAN \n\n👑 Status: ADMIN UNLIMITED ♾️\n🏙️ Wilayah: "+str(jml)+" kota\n⏰ Exp: Tidak terbatas\n\n✅ Semua fitur aktif!"
+    else:
+        txt = "📊 STATUS LANGGANAN \n\n"
+        if subs:
+            txt += "🎁 *Paket TAMBAH KOTA:*\n"
+            for s in subs:
+                expire_str = "-"
+                exp = s.get("expire")
+                if isinstance(exp, str):
+                    try: exp = datetime.fromisoformat(exp)
+                    except: exp = None
+                if exp:
+                    expire_str = exp.strftime("%d/%m/%Y %H:%M")
+                
+                kota = s.get("kota", "Tidak Diketahui")
+                status_pakai = "✅ Sudah dipakai" if s.get("used", False) else "⏳ Belum dipakai"
+                txt += f"  🏙️ {kota} : ⏰ Exp {expire_str} ({status_pakai})\n"
+        else:
+            txt += "❌ Paket TAMBAH KOTA: Belum ada\n"
+        
+        txt += f"\n🏙️ *Total Wilayah:* {jml} kota\n"
+        
+        if sub_cari and not is_expired(sub_cari):
+            exp=sub_cari.get("expire")
+            if isinstance(exp,str):
+                try: exp=datetime.fromisoformat(exp)
+                except: exp=None
+            paket=PAKET_CARI.get(sub_cari.get("paket"),{}).get("nama","-")
+            exp_str=exp.strftime("%d/%m/%Y %H:%M") if exp else "-"
+            txt+=f"\n🔎 Paket CARI DATA: {paket}\n⏰ Exp: {exp_str}"
+        else:
+            txt+=f"\n🔎 Paket CARI DATA: Belum ada"
+    return txt
+
+async def get_profil_text(uid, user_obj=None):
+    user_data=db["user_info"].get(str(uid),{})
+    kotas=user_data.get("kotas",[])
+    subs = db["langganan"].get(str(uid), [])
+    if isinstance(subs, dict): subs = [subs]
+    
+    nama=user_obj.full_name if user_obj else user_data.get("nama","-")
+    username=f"@{user_obj.username}" if user_obj and user_obj.username else user_data.get("username","-")
+    
+    if is_admin(uid): 
+        paket="👑 ADMIN UNLIMITED"
+    else:
+        paket = "❌ Belum ada"
+        if subs:
+            p_list = []
+            for s in subs:
+                kota = s.get("kota", "-")
+                p_list.append(f"{kota} ({PAKET_TAMBAH.get(s.get('paket'),{}).get('nama','-')})")
+            paket = ", ".join(p_list)
+                
+    return f"👤 PROFIL USER \n\n🆔 ID: {uid}\n👨 Nama: {nama}\n📱 Username: {username}\n🎁 Paket: {paket}\n📍 Wilayah: {len(kotas)} tersimpan\n\n💡 Gunakan menu di bawah untuk atur bot!"
+
+async def start(update,context):
+    uid=update.effective_user.id
+    nama=update.effective_user.full_name
+    username=update.effective_user.username or "-"
+    if str(uid) not in db["user_info"]: db["user_info"][str(uid)]={"nama":nama,"username":username,"kotas":[],"custom_keywords":[]}
+    else:
+        db["user_info"][str(uid)]["nama"]=nama; db["user_info"][str(uid)]["username"]=username
+        if "custom_keywords" not in db["user_info"][str(uid)]: db["user_info"][str(uid)]["custom_keywords"]=[]
+        if "kotas" not in db["user_info"][str(uid)]: db["user_info"][str(uid)]["kotas"]=[]
+    save_db()
+    kotas=db["user_info"].get(str(uid),{}).get("kotas",[])
+    
+    wilayah_text=""
+    if kotas:
+        for k in kotas[:10]:
+            parts=[p.strip() for p in k.split("|")]
+            wilayah_text+=f"🏙️ {parts[0]} > {parts[1]} > {parts[2]}\n" if len(parts)>=3 else f" {k}\n"
+    else: wilayah_text="❌ Belum ada wilayah dipilih\n"
+    
+    if is_admin(uid): lang_text="👑 Langganan Aktif: UNLIMITED (ADMIN) ♾️"
+    else:
+        subs = db["langganan"].get(str(uid), [])
+        if isinstance(subs, dict): subs = [subs]
+        if subs:
+            active_names = []
+            for s in subs:
+                exp = s.get("expire")
+                if isinstance(exp, str):
+                    try: exp = datetime.fromisoformat(exp)
+                    except: exp = None
+                if exp and exp > datetime.now():
+                    active_names.append(f"{s.get('kota','-')} (s/d {exp.strftime('%d/%m')})")
+            lang_text = "✅ Aktif: " + ", ".join(active_names) if active_names else "❌ Semua Paket telah Expired"
+        else:
+            lang_text = "❌ Belum ada langganan - Silahkan 💳 TOP UP"
+            
+    txt=f"👋 SELAMAT DATANG SAHABAT, TERIMAKASIH SUDAH BERGABUNG! 🙏\n\n📍 WILAYAH DIPILIH:\n{wilayah_text}\n{lang_text}\n\n👇 Silahlan Pilih menu di bawah ini"
+    await update.message.reply_text(txt, reply_markup=kb_main(uid))
+
+def build_kec_keyboard(kota_nama, kec_list, selected, prov_id, prov_nama):
+    buttons=[]
+    buttons.append([InlineKeyboardButton(f"✅ PILIH SEMUA KECAMATAN DI {kota_nama}", callback_data=f"kec_ALL_Semua Kecamatan")])
+    row=[]
+    for kec in kec_list:
+        name=kec["name"]
+        icon="✅" if name in selected else "🔸"
+        row.append(InlineKeyboardButton(f"{icon} {name}", callback_data=f"kec_toggle_{kec['id']}_{name}"))
+        if len(row)==2:
+            buttons.append(row); row=[]
+    if row: buttons.append(row)
+    if selected:
+        buttons.append([InlineKeyboardButton(f"💾 SIMPAN {len(selected)} KECAMATAN ✅", callback_data="kec_save")])
+        buttons.append([InlineKeyboardButton(f"🗑️ HAPUS PILIHAN ({len(selected)})", callback_data="kec_clear")])
+    buttons.append([InlineKeyboardButton("⬅️ Kembali", callback_data=f"prov_{prov_id}_{prov_nama}")])
+    return InlineKeyboardMarkup(buttons)
+
+async def cb_handler(update,context):
+    q=update.callback_query; await q.answer(); uid=q.from_user.id; data=q.data
+    if data=="noop": return
+    if data=="back_main":
+        await q.message.delete(); await context.bot.send_message(chat_id=uid,text="🏠 MENU UTAMA 🏠",reply_markup=kb_main(uid)); return
+    if data=="admin_menu":
+        if not is_admin(uid): return
+        kb=InlineKeyboardMarkup([[InlineKeyboardButton("📊 CEK ID AKTIF",callback_data="admin_cek_aktif")],[InlineKeyboardButton("🗑️ HAPUS ID USER",callback_data="admin_hapus_list")],[InlineKeyboardButton("📢 BROADCAST",callback_data="admin_broadcast")],[InlineKeyboardButton("🚫 KELOLA BLACKLIST",callback_data="admin_blacklist_menu")],[InlineKeyboardButton("🔧 SET WEBHOOK WA",callback_data="admin_set_webhook")],[InlineKeyboardButton("⬅️ Kembali",callback_data="back_main")]])
+        await q.message.delete(); await context.bot.send_message(chat_id=uid,text="🧭 ADMIN PANEL ",reply_markup=kb); return
+    if data=="admin_set_webhook":
+        await q.message.delete(); await context.bot.send_message(chat_id=uid,text=f"🔧 WEBHOOK: {RAILWAY_URL}/whatsapp-webhook",reply_markup=kb_main(uid)); return
+    if data=="admin_broadcast":
+        if not is_admin(uid): return
+        context.user_data["awaiting_broadcast"]=True
+        await q.message.delete(); await context.bot.send_message(chat_id=uid,text="📢 MODE BROADCAST\nKirim pesan broadcast\nKetik /batal untuk batal",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Batal",callback_data="admin_menu")]])); return
+    if data=="admin_cek_aktif":
+        aktif=[]
+        now = datetime.now()
+        for uid_str, subs in db["langganan"].items():
+            if isinstance(subs, dict): subs = [subs]
+            is_active = False
+            kota_list_str = ""
+            for s in subs:
+                exp = s.get("expire")
+                if isinstance(exp, str):
+                    try: exp=datetime.fromisoformat(exp)
+                    except: continue
+                if exp and isinstance(exp,datetime) and exp>now:
+                    is_active = True
+                    kota_list_str += f"{s.get('kota','')} ({exp.strftime('%d/%m')}), "
+            
+            if is_active:
+                info=db["user_info"].get(uid_str,{})
+                aktif.append(f"🆔 {uid_str}\n👤 {info.get('nama','-')}\n🏙️ Aktif: {kota_list_str[:-2]}\n---")
+                
+        txt="❌ Tidak ada user aktif" if not aktif else "✅ ID AKTIF - KOTA DIPILIH\n\n" + "\n".join(aktif[:20])
+        await q.message.delete(); await context.bot.send_message(chat_id=uid,text=txt,reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Kembali",callback_data="admin_menu")]])); return
+    if data=="admin_hapus_list":
+        buttons=[]
+        for uid_str in list(db["langganan"].keys())[:30]:
+            info=db["user_info"].get(uid_str,{}); buttons.append([InlineKeyboardButton(f"🗑️ {uid_str} | {info.get('nama','-')[:12]}",callback_data=f"admin_del_{uid_str}")])
+        buttons.append([InlineKeyboardButton("⬅️ Kembali",callback_data="admin_menu")])
+        await q.message.delete(); await context.bot.send_message(chat_id=uid,text="🗑️ HAPUS ID USER",reply_markup=InlineKeyboardMarkup(buttons)); return
+    if data.startswith("admin_del_"):
+        target=data.replace("admin_del_",""); kb=InlineKeyboardMarkup([[InlineKeyboardButton(f"✅ YA HAPUS {target}",callback_data=f"admin_confirm_del_{target}"),InlineKeyboardButton("❌ BATAL",callback_data="admin_hapus_list")]])
+        await q.message.delete(); await context.bot.send_message(chat_id=uid,text=f"⚠️ YAKIN HAPUS ID {target}?",reply_markup=kb); return
+    if data.startswith("admin_confirm_del_"):
+        target=data.replace("admin_confirm_del_","")
+        if target in db["user_info"]: db["user_info"][target]["kotas"]=[]
+        if target in db["langganan"]: del db["langganan"][target]
+        if target in db["langganan_cari"]: del db["langganan_cari"][target]
+        save_db(); await q.message.delete(); await context.bot.send_message(chat_id=uid,text=f"✅ BERHASIL HAPUS {target}",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Kembali",callback_data="admin_hapus_list")]])); return
+    if data=="admin_blacklist_menu":
+        bl=db.get("blacklist",[]); 
+        if bl:
+            txt=f"🚫 BLACKLIST ({len(bl)} nomor)\n\n"+"\n".join([f"🚫 {n}" for n in bl[:30]])
+        else:
+            txt="🚫 Blacklist kosong - Belum ada nomor"
+        txt+="\n\n💡 Cara tambah/hapus:\n/Add 083123456789\n/Delete 083123456789\nAtau kirim nomor langsung"
+        kb=InlineKeyboardMarkup([[InlineKeyboardButton("📋 Lihat Semua",callback_data="admin_blacklist_all")],[InlineKeyboardButton("⬅️ Kembali",callback_data="admin_menu")]])
+        await q.message.delete(); await context.bot.send_message(chat_id=uid,text=txt,reply_markup=kb); context.user_data["awaiting_admin_blacklist"]=True; return
+    if data=="admin_blacklist_all":
+        bl=db.get("blacklist",[]); txt="🚫 BLACKLIST:\n"+"\n".join([f"🚫 {n}" for n in bl]) if bl else "🚫 Kosong"
+        if len(txt)>4000: txt=txt[:4000]
+        await q.message.delete(); await context.bot.send_message(chat_id=uid,text=txt,reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Kembali",callback_data="admin_blacklist_menu")]])); return
+    if data.startswith("hapuskota_"):
+        idx=int(data.replace("hapuskota_","")); kotas=db["user_info"].get(str(uid),{}).get("kotas",[])
+        if idx<0 or idx>=len(kotas): await q.answer("❌ Tidak ditemukan",show_alert=True); return
+        hapus=kotas[idx]
+        kb=InlineKeyboardMarkup([[InlineKeyboardButton("✅ YA HAPUS",callback_data=f"confirmhapus_{idx}"),InlineKeyboardButton("❌ BATAL",callback_data="back_main")]])
+        await q.message.edit_text(f"⚠️ Yakin hapus?\n {hapus}",reply_markup=kb); return
+    if data.startswith("confirmhapus_"):
+        idx=int(data.replace("confirmhapus_","")); kotas=db["user_info"].get(str(uid),{}).get("kotas",[])
+        if 0<=idx<len(kotas):
+            hapus=kotas.pop(idx); save_db()
+            await q.message.edit_text(f"✅ Berhasil hapus:\n {hapus}",reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu",callback_data="back_main")]]))
+        return
+    if data=="tambah_kota":
+        if not is_admin(uid):
+            # CEK APAKAH USER PUNYA PAKET BELUM DIPAKAI (Used = False)
+            subs = db["langganan"].get(str(uid), [])
+            if isinstance(subs, dict): subs = [subs]
+            
+            has_unused_package = False
+            now = datetime.now()
+            
+            for s in subs:
+                exp = s.get("expire")
+                if isinstance(exp, str):
+                    try: exp = datetime.fromisoformat(exp)
+                    except: exp = None
+                
+                # Cek: Belum expired DAN Belum dipakai (used = False)
+                if exp and exp > now and not s.get("used", False):
+                    has_unused_package = True
+                    break
+            
+            if not has_unused_package:
+                await q.message.delete()
+                kb=InlineKeyboardMarkup([[InlineKeyboardButton("💳 TOP UP SEKARANG",callback_data="topup_tambah")],[InlineKeyboardButton("⬅️ Kembali",callback_data="back_main")]])
+                await context.bot.send_message(
+                    chat_id=uid, 
+                    text="🔒 KAMU TIDAK PUNYA PAKET TAMBAH KOTA YANG TERSISA!\n\n"
+                         "Karena sistem kami adalah *1 Top Up = 1 Kota*, untuk menambah kota baru, kamu WAJIB melakukan TOP UP lagi.\n\n"
+                         "💰 Klik tombol di bawah untuk top up sekarang:", 
+                    reply_markup=kb
+                )
+                return
+            
+        await q.message.edit_text("📍 PILIH PROVINSI \nPilih provinsi untuk tambah kota:",reply_markup=kb_provinsi()); return
+    if data.startswith("prov_"):
+        _, prov_id, prov_nama = data.split("_",2)
+        context.user_data["prov_id"]=prov_id; context.user_data["prov_nama"]=prov_nama
+        kota_list=get_kota(prov_id)
+        if not kota_list:
+            await q.message.edit_text("❌ Gagal ambil data kota, coba lagi.")
+            return
+        buttons=[]; row=[]
+        for k in kota_list:
+            row.append(InlineKeyboardButton(f" {k['name']}", callback_data=f"kota_{k['id']}_{k['name']}"))
+            if len(row)==2: buttons.append(row); row=[]
+        if row: buttons.append(row)
+        buttons.append([InlineKeyboardButton("⬅️ Kembali", callback_data="tambah_kota")])
+        await q.message.edit_text(f" Provinsi *{prov_nama}*\nPilih Kota/Kabupaten:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(buttons))
+        return
+    if data.startswith("kota_"):
+        _, kota_id, kota_nama = data.split("_", 2)
+        context.user_data["kota_id"] = kota_id
+        context.user_data["kota_nama"] = kota_nama
+        context.user_data["selected_kec"] = []
+        context.user_data["kec_list"] = get_kecamatan(kota_id)
+        kec_list = context.user_data["kec_list"]
+        if not kec_list:
+            await q.message.edit_text("❌ Gagal ambil kecamatan, coba lagi"); return
+        kb = build_kec_keyboard(kota_nama, kec_list, [], context.user_data["prov_id"], context.user_data["prov_nama"])
+        await q.message.edit_text(f" {context.user_data['prov_nama']} > *{kota_nama}*\n\n✅ Pilih lebih dari 1 kecamatan bos!\nCentang beberapa, lalu klik SIMPAN:\n\n🔸 = Belum dipilih\n✅ = Sudah dipilih\n\nDipilih: 0 kecamatan", parse_mode="Markdown", reply_markup=kb)
+        return
+    if data.startswith("kec_toggle_"):
+        _, _, kec_id, kec_nama = data.split("_", 3)
+        selected = context.user_data.get("selected_kec", [])
+        if kec_nama in selected: selected.remove(kec_nama)
+        else: selected.append(kec_nama)
+        context.user_data["selected_kec"] = selected
+        kec_list = context.user_data.get("kec_list", [])
+        kota_nama = context.user_data.get("kota_nama", "")
+        prov_id = context.user_data.get("prov_id", "")
+        prov_nama = context.user_data.get("prov_nama", "")
+        kb = build_kec_keyboard(kota_nama, kec_list, selected, prov_id, prov_nama)
+        await q.message.edit_text(f" {prov_nama} > *{kota_nama}*\n\nDipilih: {len(selected)} kecamatan", parse_mode="Markdown", reply_markup=kb)
+        return
+    if data=="kec_clear":
+        context.user_data["selected_kec"] = []
+        kec_list = context.user_data.get("kec_list", [])
+        kota_nama = context.user_data.get("kota_nama", "")
+        prov_id = context.user_data.get("prov_id", "")
+        prov_nama = context.user_data.get("prov_nama", "")
+        kb = build_kec_keyboard(kota_nama, kec_list, [], prov_id, prov_nama)
+        await q.message.edit_text(f" {prov_nama} > *{kota_nama}*\n\nDipilih: 0 kecamatan", parse_mode="Markdown", reply_markup=kb)
+        return
+    if data=="kec_save":
+        selected = context.user_data.get("selected_kec", [])
+        if not selected: await q.answer("❌ Belum pilih!", show_alert=True); return
+        prov = context.user_data.get("prov_nama")
+        kota = context.user_data.get("kota_nama")
+        if str(uid) not in db["user_info"]: db["user_info"][str(uid)] = {}
+        if "kotas" not in db["user_info"][str(uid)]: db["user_info"][str(uid)]["kotas"] = []
+        added=[]
+        for kec_nama in selected:
+            entry = f"{prov} | {kota} | {kec_nama}"
+            if entry not in db["user_info"][str(uid)]["kotas"]:
+                db["user_info"][str(uid)]["kotas"].append(entry); added.append(entry)
+        if added:
+            # Kaitkan paket aktif dengan KOTA yang dipilih.
+            if not is_admin(uid):
+                assign_subscription_to_selected_city(uid, kota)
+            save_db()
+            await q.message.edit_text(f"✅ Berhasil {len(added)} kecamatan", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu", callback_data="back_main")]]))
+        else: await q.message.edit_text(f"⚠️ Sudah ada semua!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu", callback_data="back_main")]]))
+        context.user_data["selected_kec"] = []
+        return
+    if data.startswith("kec_ALL"):
+        prov = context.user_data.get("prov_nama"); kota = context.user_data.get("kota_nama")
+        entry = f"{prov} | {kota} | Semua Kecamatan"
+        if str(uid) not in db["user_info"]: db["user_info"][str(uid)] = {}
+        if "kotas" not in db["user_info"][str(uid)]: db["user_info"][str(uid)]["kotas"] = []
+        if entry not in db["user_info"][str(uid)]["kotas"]:
+            db["user_info"][str(uid)]["kotas"].append(entry)
+            
+            if not is_admin(uid):
+                assign_subscription_to_selected_city(uid, kota)
+            save_db(); await q.message.edit_text(f"✅ Berhasil:\n {entry}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu", callback_data="back_main")]]))
+        else: await q.message.edit_text(f"⚠️ Sudah ada:\n {entry}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu", callback_data="back_main")]]))
+        return
+    if data.startswith("kec_"):
+        _, kec_id, kec_nama = data.split("_", 2)
+        prov = context.user_data.get("prov_nama"); kota = context.user_data.get("kota_nama")
+        entry = f"{prov} | {kota} | {kec_nama}"
+        if str(uid) not in db["user_info"]: db["user_info"][str(uid)] = {}
+        if "kotas" not in db["user_info"][str(uid)]: db["user_info"][str(uid)]["kotas"] = []
+        if entry not in db["user_info"][str(uid)]["kotas"]:
+            db["user_info"][str(uid)]["kotas"].append(entry)
+            
+            if not is_admin(uid):
+                assign_subscription_to_selected_city(uid, kota)
+            save_db(); await q.message.edit_text(f"✅ Berhasil:\n {entry}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu", callback_data="back_main")]]))
+        else: await q.message.edit_text(f"⚠️ Sudah ada:\n {entry}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu", callback_data="back_main")]]))
+        return
+    if data.startswith("topup_"):
+        paket_type = data.replace("topup_","")
+        context.user_data["paket_type"]=paket_type
+        if paket_type=="tambah":
+            kb=InlineKeyboardMarkup([[InlineKeyboardButton("1 MINGGU - 50K",callback_data="paket_tambah_1minggu")],[InlineKeyboardButton("1 BULAN - 150K",callback_data="paket_tambah_1bulan")],[InlineKeyboardButton("2 BULAN - 250K",callback_data="paket_tambah_2bulan")],[InlineKeyboardButton("⬅️ Kembali",callback_data="back_main")]])
+            await q.message.delete(); await context.bot.send_message(chat_id=uid,text=f"{REKENING_TEXT}\n\n💳 PILIH PAKET TAMBAH KOTA\n*Sebutkan Nama Kota saat transfer!*",reply_markup=kb)
+        else:
+            kb=InlineKeyboardMarkup([[InlineKeyboardButton("1 MINGGU - 15K",callback_data="paket_cari_1minggu")],[InlineKeyboardButton("1 BULAN - 50K",callback_data="paket_cari_1bulan")],[InlineKeyboardButton("2 BULAN - 100K",callback_data="paket_cari_2bulan")],[InlineKeyboardButton("⬅️ Kembali",callback_data="back_main")]])
+            await q.message.delete(); await context.bot.send_message(chat_id=uid,text=f"{REKENING_TEXT}\n\n🔍 PILIH PAKET CARI DATA",reply_markup=kb)
+        return
+    if data.startswith("paket_"):
+        _, ptype, pkey = data.split("_",2)
+        context.user_data["paket_pilih"]=pkey; context.user_data["paket_type"]=ptype
+        if ptype=="tambah": p=PAKET_TAMBAH.get(pkey,PAKET_TAMBAH["1minggu"])
+        else: p=PAKET_CARI.get(pkey,PAKET_CARI["1minggu"])
+        text = f"{REKENING_TEXT}\n\n🎁 PAKET DIPILIH: {p['nama']} - Rp {p['harga']:,}\n\n*⚠️ PENTING!*\nKetik NAMA KOTA yang mau diaktifkan di caption foto transfer!\n\nSetelah transfer, kirim foto buktinya disini ya bos! 📸"
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Kembali", callback_data=f"topup_{ptype}")]])
+        await q.message.delete()
+        await context.bot.send_message(chat_id=uid, text=text, reply_markup=kb)
+        return
+    if data.startswith("acc_") or data.startswith("dec_"):
+        if not is_admin(uid): return
+        parts=data.split("_"); action=parts[0]; ptype=parts[1]; target_uid=parts[2]; pkey=parts[3] if len(parts)>3 else "1minggu"
+        target_uid=int(target_uid)
+        
+        # ===== LOGIKA AKTIVASI PER KOTA BARU =====
+        if action=="acc":
+            if ptype=="tambah":
+                p=PAKET_TAMBAH.get(pkey,PAKET_TAMBAH["1minggu"])
+                expire=datetime.now()+timedelta(days=p["hari"])
+                
+                # Ambil nama kota dari caption foto
+                caption = q.message.caption or ""
+                lines = caption.split("\n")
+                kota_target = "Umum"
+                for line in lines:
+                    if "Kota:" in line:
+                        kota_target = line.replace("Kota:", "").strip()
+                        break
+
+                # Jika bukti transfer tidak menyebut kota dengan benar, gunakan KOTA
+                # yang sudah dipilih user di menu TAMBAH KOTA.
+                placeholder = kota_target.strip().upper() in {"", "TIDAK ADA KOTA", "UMUM", "TIDAK DIKETAHUI"}
+                if placeholder:
+                    selected_cities = _unique_selected_cities(target_uid)
+                    if selected_cities:
+                        existing = {str(x.get("kota", "")).strip().upper() for x in db.get("langganan", {}).get(str(target_uid), [])}
+                        kota_target = next((c for c in selected_cities if c.upper() not in existing), selected_cities[0])
+                
+                # Simpan ke database list
+                if str(target_uid) not in db["langganan"]: 
+                    db["langganan"][str(target_uid)] = []
+                elif isinstance(db["langganan"][str(target_uid)], dict):
+                    # Legacy migration
+                    old_val = db["langganan"][str(target_uid)]
+                    db["langganan"][str(target_uid)] = [old_val]
+                
+                # Cegah duplikat kota
+                city_exists = False
+                for s in db["langganan"][str(target_uid)]:
+                    if s.get("kota", "").upper() == kota_target.upper():
+                        s["expire"] = expire
+                        s["paket"] = pkey
+                        s["used"] = False # Reset pemakaian
+                        city_exists = True
+                        break
+                
+                if not city_exists:
+                    db["langganan"][str(target_uid)].append({
+                        "kota": kota_target,
+                        "paket": pkey,
+                        "expire": expire,
+                        "used": False # Awalnya BELUM dipakai
+                    })
+                    
+                save_db()
+                await q.message.edit_caption(caption=q.message.caption+f"\n\n✅ DISETUJUI - Aktif sampai {expire.strftime('%d/%m/%Y')}",reply_markup=None)
+                await context.bot.send_message(chat_id=target_uid,text=f"✅ TOP UP DISETUJUI ✅\n\n📦 Paket {p['nama']} untuk kota {kota_target} aktif sampai {expire.strftime('%d/%m/%Y')}\n🎉 Sekarang kamu bisa gunakan 1x kesempatan untuk ➕ TAMBAH KOTA!",reply_markup=kb_main(target_uid))
+            else:
+                p=PAKET_CARI.get(pkey,PAKET_CARI["1minggu"])
+                expire=datetime.now()+timedelta(days=p["hari"])
+                db["langganan_cari"][str(target_uid)]={"paket":pkey,"expire":expire}
+                save_db()
+                await q.message.edit_caption(caption=q.message.caption+f"\n\n✅ DISETUJUI - Aktif sampai {expire.strftime('%d/%m/%Y')}",reply_markup=None)
+                await context.bot.send_message(chat_id=target_uid,text=f"✅ TOP UP CARI DATA DISETUJUI ✅\n\n📦 Paket {p['nama']} aktif sampai {expire.strftime('%d/%m/%Y')}\n🎉 Sekarang bisa pakai 🔍 CARI DATA LAINNYA!",reply_markup=kb_main(target_uid))
+        else:
+            await q.message.edit_caption(caption=q.message.caption+"\n\n❌ DITOLAK",reply_markup=None)
+            await context.bot.send_message(chat_id=target_uid,text="❌ Top Up DITOLAK admin. Hubungi @Hambali1995")
+
+async def text_handler(update,context):
+    uid=update.effective_user.id
+    text=update.message.text.strip()
+    
+    if text.upper().startswith("/ADD "):
+        if not is_admin(uid):
+            await update.message.reply_text("❌ Hanya admin!", reply_markup=kb_main(uid)); return
+        num=text[5:].strip()
+        clean=''.join(filter(str.isdigit,num))
+        if clean.startswith("62"): clean="0"+clean[2:]
+        if len(clean)>=8:
+            if "blacklist" not in db: db["blacklist"]=[]
+            if clean not in db["blacklist"]:
+                db["blacklist"].append(clean)
+                save_db()
+                await update.message.reply_text(f"✅ Nomor {clean} berhasil ditambahkan ke BLACKLIST 🚫\n📊 Total: {len(db['blacklist'])} nomor", reply_markup=kb_main(uid))
+            else:
+                await update.message.reply_text(f"⚠️ Nomor {clean} sudah ada di BLACKLIST", reply_markup=kb_main(uid))
+        else:
+            await update.message.reply_text("❌ Format salah. Contoh: /Add 083123456789", reply_markup=kb_main(uid))
+        return
+    if text.upper().startswith("/DELETE "):
+        if not is_admin(uid):
+            await update.message.reply_text("❌ Hanya admin!", reply_markup=kb_main(uid)); return
+        num=text[8:].strip()
+        clean=''.join(filter(str.isdigit,num))
+        if clean.startswith("62"): clean="0"+clean[2:]
+        if clean in db.get("blacklist",[]):
+            db["blacklist"].remove(clean)
+            save_db()
+            await update.message.reply_text(f"✅ Nomor {clean} dihapus dari BLACKLIST\n📊 Total: {len(db['blacklist'])} nomor", reply_markup=kb_main(uid))
+        else:
+            await update.message.reply_text(f"❌ Nomor {clean} tidak ada di BLACKLIST", reply_markup=kb_main(uid))
+        return
+    if context.user_data.get("awaiting_admin_blacklist"):
+        clean=''.join(filter(str.isdigit,text))
+        if len(clean)>=8:
+            if clean.startswith("62"): clean="0"+clean[2:]
+            if clean not in db.get("blacklist",[]):
+                db["blacklist"].append(clean)
+                save_db()
+                bl_count=len(db.get("blacklist",[]))
+                await update.message.reply_text(f"✅ Nomor {clean} ditambahkan ke BLACKLIST 🚫\n📊 Total: {bl_count}", reply_markup=kb_main(uid))
+            else:
+                await update.message.reply_text(f"⚠️ Nomor {clean} sudah ada di BLACKLIST", reply_markup=kb_main(uid))
+            return
+    if context.user_data.get("awaiting_broadcast"):
+        if text.lower()=="/batal":
+            context.user_data["awaiting_broadcast"]=False
+            await update.message.reply_text("❌ Broadcast dibatalkan",reply_markup=kb_main(uid)); return
+        count=0
+        for uid_str in db.get("user_info",{}).keys():
+            try:
+                await context.bot.send_message(chat_id=int(uid_str),text=f"📢 BROADCAST\n\n{text}")
+                count+=1
+            except: pass
+        context.user_data["awaiting_broadcast"]=False
+        await update.message.reply_text(f"✅ Broadcast terkirim ke {count} user",reply_markup=kb_main(uid)); return
+    
+    if context.user_data.get("awaiting_cari_lainnya"):
+        if not is_active_cari(uid) and not is_admin(uid):
+            await update.message.reply_text("🔒 FITUR TERKUNCI 🔒\nSilahkan TOP UP CARI DATA LAINNYA dulu bos!", reply_markup=kb_main(uid))
+            context.user_data["awaiting_cari_lainnya"]=False
+            return
+        query=text.strip().upper()
+        if query=="/BATAL":
+            context.user_data["awaiting_cari_lainnya"]=False
+            await update.message.reply_text("❌ Pencarian dibatalkan", reply_markup=kb_main(uid)); return
+        history=load_wa_history()
+        hasil=[]
+        for h in reversed(history[-5000:]):
+            if query in h.get("text","").upper() or query in h.get("group","").upper():
+                hasil.append(h)
+                if len(hasil)>=20: break
+        if not hasil:
+            await update.message.reply_text(f"❌ Data '{text}' tidak ditemukan di history WA\nCoba keyword lain bos!", reply_markup=kb_main(uid))
+        else:
+            txt=f"🔎 HASIL PENCARIAN: {text}\n📊 Ditemukan {len(hasil)} data\n\n"
+            for i,h in enumerate(hasil[:10],1):
+                txt+=f"{i}. 📍 {h.get('group','-')}\n👤 {h.get('sender','-')} - {h.get('number','-')}\n💬 {h.get('text','')[:150]}...\n⏰ {h.get('time','')[:19]}\n---\n"
+            await update.message.reply_text(txt, reply_markup=kb_main(uid))
+            for h in hasil[:5]:
+                nomor=h.get("number","")
+                clean=''.join(filter(str.isdigit,nomor))
+                if clean.startswith("0"): clean="62"+clean[1:]
+                msg=f"🏙️ KOTA: {text.upper()}\n🛡️ Grup: {h.get('group')}\n👤 Pengirim: {h.get('sender')}\n📱 Nomor: {h.get('number')}\n\n💬 Pesan:\n{h.get('text')}"
+                try:
+                    if clean:
+                        kb=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Chat di WA", url=f"https://wa.me/{clean}")]])
+                        await context.bot.send_message(chat_id=uid, text=msg, reply_markup=kb)
+                    else:
+                        await context.bot.send_message(chat_id=uid, text=msg)
+                except: pass
+        context.user_data["awaiting_cari_lainnya"]=False
+        return
+    
+    if context.user_data.get("awaiting_keyword_gratis"):
+        if text.lower()=="/batal":
+            context.user_data["awaiting_keyword_gratis"]=False
+            await update.message.reply_text("❌ Dibatalkan",reply_markup=kb_main(uid)); return
+        if not is_user_id_aktif(uid):
+            context.user_data["awaiting_keyword_gratis"]=False
+            kb=InlineKeyboardMarkup([[InlineKeyboardButton("💳 TOP UP SEKARANG",callback_data="topup_tambah")],[InlineKeyboardButton("🏠 Kembali",callback_data="back_main")]])
+            await update.message.reply_text("🔒 FITUR PILIH KEYWORD TERKUNCI 🔒\n\n❌ ID kamu BELUM AKTIF!\nSilahkan TOP UP dulu untuk jadi USER ID AKTIF, baru bisa pakai 🚀 PILIH KEYWORD!",reply_markup=kb); return
+        forbidden, reason = is_geo_forbidden(text)
+        if forbidden:
+            await update.message.reply_text(f"🚫 KEYWORD DITOLAK!\n\n{reason}\n\n❌ Tidak boleh pakai nama PROVINSI / KOTA-KABUPATEN / KECAMATAN!\n✅ Harus pakai keyword lain contoh: 'Link Dana kaget', 'Garansi', 'Info loker', dll\n\n✍️ Coba ketik keyword lain atau /batal",reply_markup=kb_main(uid))
+            return
+        if str(uid) not in db["user_info"]: db["user_info"][str(uid)]={"kotas":[],"custom_keywords":[]}
+        if "custom_keywords" not in db["user_info"][str(uid)]: db["user_info"][str(uid)]["custom_keywords"]=[]
+        kw=text.strip()
+        if len(kw) < 3:
+            await update.message.reply_text("❌ Keyword minimal 3 huruf! Coba lagi.",reply_markup=kb_main(uid)); return
+        if kw and kw not in db["user_info"][str(uid)]["custom_keywords"]:
+            db["user_info"][str(uid)]["custom_keywords"].append(kw)
+            save_db()
+            await update.message.reply_text(f"✅ Keyword '{kw}' ditambahkan!\n📌 Keyword kamu: {', '.join(db['user_info'][str(uid)]['custom_keywords'])}",reply_markup=kb_main(uid))
+        else:
+            await update.message.reply_text(f"⚠️ Keyword '{kw}' sudah ada",reply_markup=kb_main(uid))
+        context.user_data["awaiting_keyword_gratis"]=False
+        return
+    
+    if "PROFIL" in text:
+        txt=await get_profil_text(uid,update.effective_user)
+        await update.message.reply_text(txt,reply_markup=kb_main(uid))
+    elif "TAMBAH KOTA" in text:
+        if not is_admin(uid):
+            # CEK LAGI DI SINI KALAU USER TEKAN TOMBOL FISIK
+            subs = db["langganan"].get(str(uid), [])
+            if isinstance(subs, dict): subs = [subs]
+            
+            has_unused_package = False
+            now = datetime.now()
+            
+            for s in subs:
+                exp = s.get("expire")
+                if isinstance(exp, str):
+                    try: exp = datetime.fromisoformat(exp)
+                    except: exp = None
+                
+                if exp and exp > now and not s.get("used", False):
+                    has_unused_package = True
+                    break
+            
+            if not has_unused_package:
+                kb=InlineKeyboardMarkup([[InlineKeyboardButton("💳 TOP UP SEKARANG",callback_data="topup_tambah")],[InlineKeyboardButton("🏠 Kembali",callback_data="back_main")]])
+                await update.message.reply_text(
+                    "🔒 KAMU TIDAK PUNYA PAKET TAMBAH KOTA YANG TERSISA!\n\n"
+                    "Karena sistem kami adalah *1 Top Up = 1 Kota*, untuk menambah kota baru, kamu WAJIB melakukan TOP UP lagi.\n\n"
+                    "💰 Klik tombol di bawah untuk top up sekarang:", 
+                    reply_markup=kb
+                )
+                return
+                
+        await update.message.reply_text("📍 PILIH PROVINSI ",reply_markup=kb_provinsi())
+    elif "WILAYAH DIPILIH" in text:
+        kotas=db["user_info"].get(str(uid),{}).get("kotas",[])
+        if not kotas:
+            await update.message.reply_text("❌ Belum ada wilayah dipilih\nSilahkan 🌍 TAMBAH KOTA dulu!",reply_markup=kb_main(uid))
+        else:
+            txt=f" WILAYAH DIPILIH \n📊 Total {len(kotas)} wilayah\n\n"
+            buttons=[]
+            for i,k in enumerate(kotas[:20]):
+                txt+=f"{i+1}. 🏙️ {k}\n"
+                buttons.append([InlineKeyboardButton(f"🗑️ Hapus {k[:30]}",callback_data=f"hapuskota_{i}")])
+            buttons.append([InlineKeyboardButton("🏠 Kembali ke Menu",callback_data="back_main")])
+            await update.message.reply_text(txt,reply_markup=InlineKeyboardMarkup(buttons))
+    elif "HAPUS KOTA" in text:
+        kotas=db["user_info"].get(str(uid),{}).get("kotas",[])
+        if not kotas:
+            await update.message.reply_text("❌ Belum ada wilayah",reply_markup=kb_main(uid))
+        else:
+            buttons=[]
+            for i,k in enumerate(kotas[:20]):
+                buttons.append([InlineKeyboardButton(f"🗑️ {k[:40]}",callback_data=f"hapuskota_{i}")])
+            buttons.append([InlineKeyboardButton("🏠 Kembali",callback_data="back_main")])
+            await update.message.reply_text(f"🗑️ HAPUS KOTA SAYA\nPilih yang mau dihapus:",reply_markup=InlineKeyboardMarkup(buttons))
+    elif "STATUS" in text:
+        txt=await get_status_text(uid)
+        await update.message.reply_text(txt,reply_markup=kb_main(uid))
+    elif "TOP UP" in text:
+        kb=InlineKeyboardMarkup([[InlineKeyboardButton("🌍 TAMBAH KOTA - 50K/150K/250K",callback_data="topup_tambah")],[InlineKeyboardButton("🔍 CARI DATA - 15K/50K/100K",callback_data="topup_cari")],[InlineKeyboardButton("🏠 Kembali",callback_data="back_main")]])
+        await update.message.reply_text(f"{REKENING_TEXT}\n\n💳 PILIH JENIS TOP UP:",reply_markup=kb)
+    elif "CARI DATA LAINNYA" in text:
+        if not is_active_cari(uid) and not is_admin(uid):
+            kb=InlineKeyboardMarkup([[InlineKeyboardButton("💳 TOP UP CARI DATA",callback_data="topup_cari")]])
+            await update.message.reply_text("🔒 FITUR CARI DATA TERKUNCI 🔒\nSilahkan TOP UP CARI DATA LAINNYA dulu!\n\nPaket:\n1 Minggu 15K\n1 Bulan 50K\n2 Bulan 100K",reply_markup=kb); return
+        context.user_data["awaiting_cari_lainnya"]=True
+        await update.message.reply_text("🔎 CARI DATA LAINNYA \n\n📍 MASUKAN NAMA KOTA\n💡 Contoh: BANDUNG\n\n✍️ Ketik kota yang mau dicari\nBot akan cari di history WA yang dishare pengirim!\n\n❌ Ketik /batal untuk batal.",reply_markup=kb_main(uid))
+    elif "KEYWORD" in text:
+        if not is_user_id_aktif(uid):
+            kb=InlineKeyboardMarkup([[InlineKeyboardButton("💳 TOP UP SEKARANG",callback_data="topup_tambah")],[InlineKeyboardButton("🔍 TOP UP CARI DATA",callback_data="topup_cari")],[InlineKeyboardButton("🏠 Kembali",callback_data="back_main")]])
+            await update.message.reply_text("🔒 AKSES DITOLAK - ID BELUM AKTIF 🔒\n\n🚀 Menu PILIH KEYWORD hanya untuk USER ID AKTIF!\n\n❌ ID kamu belum aktif.\n💡 Silahkan TOP UP paket TAMBAH KOTA atau CARI DATA dulu untuk aktivasi!\n\nSetelah aktif, kamu baru bisa pakai keyword custom.",reply_markup=kb); return
+        context.user_data["awaiting_keyword_gratis"]=True
+        current_keywords = ", ".join(db["user_info"].get(str(uid),{}).get("custom_keywords",[]))
+        await update.message.reply_text(
+            f"🔎 PILIH KEYWORD LAINNYA \n\n✍️ Silahkan ketikan keyword yang Anda pilih\n💡 Contoh: Link Dana kaget, Promo, Loker, dll\n\n⚠️ PERATURAN:\n❌ DILARANG ketik nama PROVINSI\n❌ DILARANG ketik nama KOTA/KABUPATEN\n❌ DILARANG ketik nama KECAMATAN\n✅ HARUS keyword lainnya\n\n🔔 Nanti otomatis dapat notifikasi jika ada pengirim sebar keyword itu!\n\n📌 Keyword kamu saat ini: {current_keywords if current_keywords else 'Belum ada'}\n\n❌ Ketik /batal untuk batal.",
+            reply_markup=kb_main(uid)
+        )
+    elif "BLACKLIST" in text:
+        bl=db.get("blacklist",[])
+        if not bl:
+            txt="🚫 DAFTAR BLACKLIST \n\n❌ Belum ada nomor blacklist\n\n✅ Semua nomor aman!"
+        else:
+            txt=f"🚫 DAFTAR BLACKLIST \n📊 Total {len(bl)} nomor\n\n"
+            for i,n in enumerate(bl[:100],1):
+                txt+=f"{i}. 🚫 {n}\n"
+            if len(bl)>100:
+                txt+=f"\n... dan {len(bl)-100} nomor lainnya\nKetik /cek untuk cek spesifik"
+        txt+="\n\n🔎 Untuk cek nomor spesifik ketik:\n/cek 083123456789\n\n⬅️ Ketik /batal untuk kembali"
+        await update.message.reply_text(txt,reply_markup=kb_main(uid))
+        context.user_data["awaiting_blacklist_check"]=True
+    elif "BANTUAN" in text:
+        await update.message.reply_text(
+            "❓ BANTUAN - PANDUAN BOT \n\n"
+            "1️⃣ 💳 Top up 🌍 TAMBAH KOTA untuk filter wilayah\n"
+            "2️⃣ 🔎 Top up CARI DATA LAINNYA untuk search history WA\n"
+            "3️⃣ 🔎 PILIH KEYWORD gratis untuk keyword custom\n"
+            "4️⃣ 🚫 DAFTAR BLACKLIST untuk cek nomor penipu\n\n"
+            "👨‍💼 Hubungi Admin: @Hambali1995\n"
+            "💡 Bot akan notif otomatis jika ada data sesuai wilayah!",
+            reply_markup=kb_main(uid)
+        )
+    elif "HUBUNGI ADMIN" in text:
+        await update.message.reply_text("🧑‍💻 HUBUNGI ADMIN \n\n📱 Telegram: @Hambali1995\n⏰ Fast respon 1x24 jam",reply_markup=kb_main(uid))
+    elif "PANEL ADMIN" in text:
+        if not is_admin(uid): return
+        kb=InlineKeyboardMarkup([[InlineKeyboardButton("📊 CEK ID AKTIF",callback_data="admin_cek_aktif")],[InlineKeyboardButton("🗑️ HAPUS ID USER",callback_data="admin_hapus_list")],[InlineKeyboardButton("📢 BROADCAST",callback_data="admin_broadcast")],[InlineKeyboardButton("🚫 KELOLA BLACKLIST",callback_data="admin_blacklist_menu")],[InlineKeyboardButton("🔧 SET WEBHOOK WA",callback_data="admin_set_webhook")]])
+        await update.message.reply_text("🧭 PANEL ADMIN \nPilih menu admin:",reply_markup=kb)
+
+async def contact_handler(update,context):
+    uid=update.effective_user.id
+    if not is_admin(uid):
+        await update.message.reply_text("❌ Hanya admin bisa tambah blacklist lewat kontak!", reply_markup=kb_main(uid)); return
+    contact=update.message.contact
+    if contact and contact.phone_number:
+        ok,clean=add_blacklist(contact.phone_number)
+        if ok:
+            await update.message.reply_text(f"✅ Nomor {clean} ({contact.first_name}) ditambahkan ke BLACKLIST 🚫\n📊 Total: {len(db.get('blacklist',[]))}", reply_markup=kb_main(uid))
+        else:
+            await update.message.reply_text(f"⚠️ Nomor {clean} sudah ada di BLACKLIST (anti duplikat)\n📊 Total: {len(db.get('blacklist',[]))}", reply_markup=kb_main(uid))
+    else:
+        await update.message.reply_text("❌ Gagal baca kontak", reply_markup=kb_main(uid))
+
+async def foto_handler(update,context):
+    uid=update.effective_user.id
+    if not update.message.photo: return
+    paket_key=context.user_data.get("paket_pilih","1minggu"); paket_type=context.user_data.get("paket_type","tambah")
+    if paket_type=="tambah": p=PAKET_TAMBAH.get(paket_key,PAKET_TAMBAH["1minggu"])
+    else: p=PAKET_CARI.get(paket_key,PAKET_CARI["1minggu"])
+    file_id=update.message.photo[-1].file_id
+    
+    # Ambil kota dari caption foto user
+    caption_user = update.message.caption or ""
+    kota_dicetak = "Tidak ada kota"
+    if caption_user:
+         # Ambil kata pertama sebagai nama kota
+        kota_dicetak = caption_user.strip().split()[0]
+    
+    caption_admin = f"💳 BUKTI TOP UP {paket_type.upper()} MASUK\n🆔 ID: {uid}\n🎁 Paket: {p['nama']} - Rp {p['harga']:,}\n📍 Kota: {kota_dicetak}"
+    kb=InlineKeyboardMarkup([[InlineKeyboardButton("✅ SETUJU",callback_data=f"acc_{paket_type}_{uid}_{paket_key}"),InlineKeyboardButton("❌ TOLAK",callback_data=f"dec_{paket_type}_{uid}_{paket_key}")]])
+    for admin_id in ADMIN_IDS:
+        try: await context.bot.send_photo(chat_id=admin_id,photo=file_id,caption=caption_admin,reply_markup=kb)
+        except: pass
+    await update.message.reply_text("✅ 📸 Bukti terkirim ke Admin!\n⏳ Menunggu persetujuan (max 1x24 jam)\n🔔 Nanti ada notifikasi otomatis!",reply_markup=kb_main(uid))
+
+async def cmd_profil(update,context):
+    uid=update.effective_user.id; txt=await get_profil_text(uid,update.effective_user); await update.message.reply_text(txt,reply_markup=kb_main(uid))
+
+async def cmd_status(update,context):
+    uid=update.effective_user.id; txt=await get_status_text(uid); await update.message.reply_text(txt,reply_markup=kb_main(uid))
+
+async def cmd_cek(update,context):
+    uid=update.effective_user.id
+    text=update.message.text.strip()
+    if text.lower().startswith("/cek "):
+        number=text[5:].strip()
+    else:
+        if context.args:
+            number=" ".join(context.args)
+        else:
+            await update.message.reply_text("🔍 Format: /cek 083123456789",reply_markup=kb_main(uid)); return
+    clean=''.join(filter(str.isdigit,number))
+    if clean.startswith("62"): clean="0"+clean[2:]
+    if len(clean)>=8:
+        if clean in db.get("blacklist",[]):
+            await update.message.reply_text(f"🚫 Nomor {clean} ADA di BLACKLIST kami 🚫\n📊 Total: {len(db.get('blacklist',[]))} nomor",reply_markup=kb_main(uid))
+        else:
+            await update.message.reply_text(f"✅ Nomor {clean} BELUM ADA di database\n📊 Total: {len(db.get('blacklist',[]))} nomor",reply_markup=kb_main(uid))
+    else:
+        await update.message.reply_text("❌ Format salah\nContoh: /cek 083123456789",reply_markup=kb_main(uid))
+
+async def cmd_backup(update,context):
+    uid=update.effective_user.id
+    if not is_admin(uid):
+        await update.message.reply_text("❌ Hanya admin",reply_markup=kb_main(uid)); return
+    try:
+        with open(DB_FILE,"r",encoding="utf-8") as f:
+            data=json.load(f)
+        txt=f"💾 BACKUP DB\n👤 User: {len(data.get('user_info',{}))}\n🎁 Tambah: {len(data.get('langganan',{}))}\n🔎 Cari: {len(data.get('langganan_cari',{}))}\n🚫 Blacklist: {len(data.get('blacklist',[]))}"
+        await update.message.reply_text(txt,reply_markup=kb_main(uid))
+        await context.bot.send_document(chat_id=uid, document=open(DB_FILE,"rb"), filename="bot_database.json")
+        if os.path.exists(DB_FILE_PERSISTENT):
+            await context.bot.send_document(chat_id=uid, document=open(DB_FILE_PERSISTENT,"rb"), filename="bot_database_persistent.json")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Backup fail: {e}",reply_markup=kb_main(uid))
+
+async def cmd_test_location(update, context):
+    """Test apakah teks akan match dengan wilayah user"""
+    uid = update.effective_user.id
+    if not is_admin(uid):
+        await update.message.reply_text("❌ Hanya admin", reply_markup=kb_main(uid))
+        return
+    
+    if not context.args:
+        await update.message.reply_text(
+            "🔎 Format: /testlokasi [teks]\n\n"
+            "Contoh: /testlokasi Bandung\n"
+            "Bot akan mengecek apakah teks tersebut match dengan wilayah user",
+            reply_markup=kb_main(uid)
+        )
+        return
+    
+    test_text = " ".join(context.args).upper()
+    results = []
+    
+    for uid_str, uinfo in db.get("user_info", {}).items():
+        kotas = uinfo.get("kotas", [])
+        is_match, matched = check_location_match(test_text, kotas)
+        if is_match:
+            results.append(f"🆔 {uid_str} - {uinfo.get('nama', '-')} -> {matched}")
+    
+    if results:
+        await update.message.reply_text(
+            f"✅ Match ditemukan untuk '{test_text}':\n\n" + "\n".join(results[:20]),
+            reply_markup=kb_main(uid)
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ Tidak ada match untuk '{test_text}'",
+            reply_markup=kb_main(uid)
+        )
+
+# ========== SETUP APPLICATION ==========
+application = Application.builder().token(TOKEN).build()
+
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("profil", cmd_profil))
+application.add_handler(CommandHandler("status", cmd_status))
+application.add_handler(CommandHandler("cek", cmd_cek))
+application.add_handler(CommandHandler("backup", cmd_backup))
+application.add_handler(CommandHandler("testlokasi", cmd_test_location))
+application.add_handler(CallbackQueryHandler(cb_handler))
+application.add_handler(MessageHandler(filters.CONTACT, contact_handler))
+application.add_handler(MessageHandler(filters.PHOTO, foto_handler))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+
+import asyncio
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
+async def setup_webhook():
+    await application.initialize()
+    await application.start()
+    url = RAILWAY_URL if RAILWAY_URL.startswith("http") else f"https://{RAILWAY_URL}"
+    webhook_url = f"{url}/{TOKEN}"
+    logger.info(f"Setting webhook to {webhook_url}")
+    await application.bot.set_webhook(url=webhook_url, drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+
+loop.run_until_complete(setup_webhook())
+
+@flask_app.route("/")
+def index():
+    return "Bot Active - Webhook Mode"
+
+@flask_app.route(f"/{TOKEN}", methods=["POST"])
+def telegram_webhook():
+    try:
+        data = request.get_json(force=True)
+        if not data:
+            return "ok"
+        update = Update.de_json(data, application.bot)
+        try:
+            loop.run_until_complete(application.process_update(update))
+        except:
+            import asyncio
+            asyncio.run(application.process_update(update))
+        return "ok"
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return "ok"
+
+if __name__ == "__main__":
+    logger.info(f"🚀 WEBHOOK MODE - Port {PORT}")
+    flask_app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
