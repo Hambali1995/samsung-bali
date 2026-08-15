@@ -416,8 +416,8 @@ def whatsapp_webhook():
                     msg = f"🤖 *INFO SEDULURAN BOT* 🤖\n\n" \
                           f"🎰 GRUP: {group_name}\n" \
                           f"👤 PENGIRIM: {sender_name}\n" \
-                          f"📱 NOMOR: {sender_number_formatted}\n" \
-                          f"🔍 MATCH: {match_type}\n\n" \
+                          f"📞 NOMOR: {sender_number_formatted}\n" \
+                          f"🔎 MATCH: {match_type}\n\n" \
                           f"💬 PESAN:\n{clean_text}{notes}"
                     
                     # Kirim ke user
@@ -558,7 +558,7 @@ async def get_status_text(uid):
     else:
         txt = "📊 STATUS LANGGANAN \n\n"
         if subs:
-            txt += "📦 *Paket TAMBAH KOTA:*\n"
+            txt += "🎁 *Paket TAMBAH KOTA:*\n"
             for s in subs:
                 expire_str = "-"
                 exp = s.get("expire")
@@ -607,7 +607,7 @@ async def get_profil_text(uid, user_obj=None):
                 p_list.append(f"{kota} ({PAKET_TAMBAH.get(s.get('paket'),{}).get('nama','-')})")
             paket = ", ".join(p_list)
                 
-    return f"👤 PROFIL USER \n\n🆔 ID: {uid}\n👨 Nama: {nama}\n📱 Username: {username}\n📦 Paket: {paket}\n📍 Wilayah: {len(kotas)} tersimpan\n\n💡 Gunakan menu di bawah untuk atur bot!"
+    return f"👤 PROFIL USER \n\n🆔 ID: {uid}\n👨 Nama: {nama}\n📱 Username: {username}\n🎁 Paket: {paket}\n📍 Wilayah: {len(kotas)} tersimpan\n\n💡 Gunakan menu di bawah untuk atur bot!"
 
 async def start(update,context):
     uid=update.effective_user.id
@@ -854,7 +854,7 @@ async def cb_handler(update,context):
         context.user_data["paket_pilih"]=pkey; context.user_data["paket_type"]=ptype
         if ptype=="tambah": p=PAKET_TAMBAH.get(pkey,PAKET_TAMBAH["1minggu"])
         else: p=PAKET_CARI.get(pkey,PAKET_CARI["1minggu"])
-        text = f"{REKENING_TEXT}\n\n📦 PAKET DIPILIH: {p['nama']} - Rp {p['harga']:,}\n\n*⚠️ PENTING!*\nKetik NAMA KOTA yang mau diaktifkan di caption foto transfer!\n\nSetelah transfer, kirim foto buktinya disini ya bos! 📸"
+        text = f"{REKENING_TEXT}\n\n🎁 PAKET DIPILIH: {p['nama']} - Rp {p['harga']:,}\n\n*⚠️ PENTING!*\nKetik NAMA KOTA yang mau diaktifkan di caption foto transfer!\n\nSetelah transfer, kirim foto buktinya disini ya bos! 📸"
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Kembali", callback_data=f"topup_{ptype}")]])
         await q.message.delete()
         await context.bot.send_message(chat_id=uid, text=text, reply_markup=kb)
@@ -1003,7 +1003,7 @@ async def text_handler(update,context):
                 nomor=h.get("number","")
                 clean=''.join(filter(str.isdigit,nomor))
                 if clean.startswith("0"): clean="62"+clean[1:]
-                msg=f"🏙️ KOTA: {text.upper()}\n👥 Grup: {h.get('group')}\n👤 Pengirim: {h.get('sender')}\n📱 Nomor: {h.get('number')}\n\n💬 Pesan:\n{h.get('text')}"
+                msg=f"🏙️ KOTA: {text.upper()}\n🛡️ Grup: {h.get('group')}\n👤 Pengirim: {h.get('sender')}\n📱 Nomor: {h.get('number')}\n\n💬 Pesan:\n{h.get('text')}"
                 try:
                     if clean:
                         kb=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Chat di WA", url=f"https://wa.me/{clean}")]])
@@ -1154,7 +1154,7 @@ async def foto_handler(update,context):
          # Ambil kata pertama sebagai nama kota
         kota_dicetak = caption_user.strip().split()[0]
     
-    caption_admin = f"💳 BUKTI TOP UP {paket_type.upper()} MASUK\n🆔 ID: {uid}\n📦 Paket: {p['nama']} - Rp {p['harga']:,}\n📍 Kota: {kota_dicetak}"
+    caption_admin = f"💳 BUKTI TOP UP {paket_type.upper()} MASUK\n🆔 ID: {uid}\n🎁 Paket: {p['nama']} - Rp {p['harga']:,}\n📍 Kota: {kota_dicetak}"
     kb=InlineKeyboardMarkup([[InlineKeyboardButton("✅ SETUJU",callback_data=f"acc_{paket_type}_{uid}_{paket_key}"),InlineKeyboardButton("❌ TOLAK",callback_data=f"dec_{paket_type}_{uid}_{paket_key}")]])
     for admin_id in ADMIN_IDS:
         try: await context.bot.send_photo(chat_id=admin_id,photo=file_id,caption=caption_admin,reply_markup=kb)
@@ -1194,7 +1194,7 @@ async def cmd_backup(update,context):
     try:
         with open(DB_FILE,"r",encoding="utf-8") as f:
             data=json.load(f)
-        txt=f"💾 BACKUP DB\n👤 User: {len(data.get('user_info',{}))}\n📦 Tambah: {len(data.get('langganan',{}))}\n🔎 Cari: {len(data.get('langganan_cari',{}))}\n🚫 Blacklist: {len(data.get('blacklist',[]))}"
+        txt=f"💾 BACKUP DB\n👤 User: {len(data.get('user_info',{}))}\n🎁 Tambah: {len(data.get('langganan',{}))}\n🔎 Cari: {len(data.get('langganan_cari',{}))}\n🚫 Blacklist: {len(data.get('blacklist',[]))}"
         await update.message.reply_text(txt,reply_markup=kb_main(uid))
         await context.bot.send_document(chat_id=uid, document=open(DB_FILE,"rb"), filename="bot_database.json")
         if os.path.exists(DB_FILE_PERSISTENT):
@@ -1211,7 +1211,7 @@ async def cmd_test_location(update, context):
     
     if not context.args:
         await update.message.reply_text(
-            "🔍 Format: /testlokasi [teks]\n\n"
+            "🔎 Format: /testlokasi [teks]\n\n"
             "Contoh: /testlokasi Bandung\n"
             "Bot akan mengecek apakah teks tersebut match dengan wilayah user",
             reply_markup=kb_main(uid)
