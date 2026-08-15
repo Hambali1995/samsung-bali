@@ -19,7 +19,7 @@ if ADMIN_IDS_STR:
     except:
         ADMIN_IDS = [7962377902, 8538844365, 8877282096]
 else:
-    ADMIN_IDS = [7962377902, 8538844365, 8877282096]
+    ADMIN_IDS = [7962377902, 8877282096]
 
 DB_FILE = "bot_database.json"
 DB_FILE_PERSISTENT = "/data/bot_database.json"
