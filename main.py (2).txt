@@ -770,7 +770,7 @@ def build_kec_keyboard(kota_nama, kec_list, selected, prov_id, prov_nama):
     buttons.append([InlineKeyboardButton(f"✅ PILIH SEMUA KECAMATAN DI {kota_nama.upper()}", callback_data=f"kec_ALL_Semua Kecamatan")])
     for kec in kec_list:
         name=kec["name"]
-        icon="✅" if name in selected else "🔸"
+        icon="✅" if name in selected else "◻️"
         buttons.append([InlineKeyboardButton(f"{icon} {name.upper()}", callback_data=f"kec_toggle_{kec['id']}_{name}")])
     if selected:
         buttons.append([InlineKeyboardButton(f"💾 SIMPAN {len(selected)} KECAMATAN ✅", callback_data="kec_save")])
@@ -1728,7 +1728,7 @@ Paket belum aktif / expired. Silahkan pilih paket:
                     
                 save_db()
                 await q.message.edit_caption(caption=q.message.caption+f"\n\n✅ DISETUJUI - Aktif sampai {expire.strftime('%d/%m/%Y')}",reply_markup=None)
-                await context.bot.send_message(chat_id=target_uid,text=f"✅ TOP UP DISETUJUI ✅\n\n📦 Paket {p['nama']} untuk kota {kota_target} aktif sampai {expire.strftime('%d/%m/%Y')}\n🎉 Sekarang kamu bisa gunakan 1x kesempatan untuk ➕ TAMBAH KOTA!",reply_markup=kb_main(target_uid))
+                await context.bot.send_message(chat_id=target_uid,text=f"✅ TOP UP DISETUJUI ✅\n\n📦 Paket {p['nama']} untuk kota {kota_target} aktif sampai {expire.strftime('%d/%m/%Y')}\n🎉 Sekarang kamu bisa gunakan 1x kesempatan untuk 🌍 TAMBAH KOTA!",reply_markup=kb_main(target_uid))
             else:
                 p=PAKET_CARI.get(pkey,PAKET_CARI["1minggu"])
                 expire=datetime.now()+timedelta(days=p["hari"])
