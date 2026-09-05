@@ -570,12 +570,12 @@ def whatsapp_webhook():
 Grup : {group_name}
 Pengirim : {sender_name}
 No WhatsApp : {sender_number_formatted}
-━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━
 
 ISI PESAN
 {clean_text}
-━━━━━━━━━━━━━━
-⚠️ Perhatian : untuk tetap waspada dan hati-hati disarankan untuk rekber, terimakasih 🙏"""
+━━━━━━━━━━━━━━━━━━━
+⚠️ Perhatian : untuk tetap waspada dan hati-hati disarankan untuk rekber, terimakasih.sumber: https://t.me/Aakiwkiw_bot 🙏"""
                     
                     # Kirim ke user
                     success = send_tg_message(uid_int, msg, wa_number=sender_number_formatted)
@@ -711,7 +711,7 @@ def kb_back_main_only():
 
 def kb_main(uid):
     keyboard=[
-        [InlineKeyboardButton("👤 PROFIL", callback_data="menu_profil"), InlineKeyboardButton("📊 STATUS LANGGANAN", callback_data="menu_status")],
+        [InlineKeyboardButton("👤 PROFIL", callback_data="menu_profil"), InlineKeyboardButton("📊 CEK STATUS", callback_data="menu_status")],
         [InlineKeyboardButton("🌍 TAMBAH KOTA", callback_data="menu_tambah_kota"), InlineKeyboardButton("🌠 WILAYAH DIPILIH", callback_data="menu_wilayah")],
         [InlineKeyboardButton("🔎 CARI DATA LAIN", callback_data="menu_cari_data"), InlineKeyboardButton("🚫 NO BLACKLIST", callback_data="menu_blacklist")],
         [InlineKeyboardButton("🧑‍💻 HUBUNGI ADMIN", callback_data="menu_hubungi_admin")],
@@ -757,7 +757,7 @@ def kb_admin_panel():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📊 STATUS USER AKTIF", callback_data="admin_status_user")],
         [InlineKeyboardButton("👤 CEK USER AKTIF (SIMPLE)", callback_data="admin_cek_aktif")],
-        [InlineKeyboardButton("➕ TAMBAH BLACKLIST (BULK)", callback_data="admin_tambah_blacklist")],
+        [InlineKeyboardButton("➕ TAMBAH BLACKLIST", callback_data="admin_tambah_blacklist")],
         [InlineKeyboardButton("➖ HAPUS BLACKLIST", callback_data="admin_hapus_blacklist")],
         [InlineKeyboardButton("🗑️ HAPUS ID USER", callback_data="admin_hapus_list")],
         [InlineKeyboardButton("📦 HAPUS PAKET USER", callback_data="admin_hapus_paket")],
@@ -777,7 +777,7 @@ def build_kec_keyboard(kota_nama, kec_list, selected, prov_id, prov_nama):
     buttons.append([InlineKeyboardButton(f"✅ PILIH SEMUA KECAMATAN DI {kota_nama.upper()}", callback_data=f"kec_ALL_Semua Kecamatan")])
     for kec in kec_list:
         name=kec["name"]
-        icon="✅" if name in selected else "🔸"
+        icon="✅" if name in selected else "◻️"
         buttons.append([InlineKeyboardButton(f"{icon} {name.upper()}", callback_data=f"kec_toggle_{kec['id']}_{name}")])
     if selected:
         buttons.append([InlineKeyboardButton(f"💾 SIMPAN {len(selected)} KECAMATAN ✅", callback_data="kec_save")])
@@ -1036,11 +1036,12 @@ async def start(update,context):
 ━━━━━━━━━━━━━━━
 👋 Selamat datang, SAHABAT JHT! Gimana kabarnya nih, saya berharap kabar baik-baik saja yah, tetap semangat dan jangan lupa bersyukur. Silahkan pilih menu di bawah ini : 👇
 1. PROFIL
-2. STATUS LANGGANAN
-3. WILAYAH DIPILIH
-4. CARI DATA LAIN
-5. NO BLACKLIST
-6. HUBUNGI ADMIN"""
+2. CEK STATUS
+3. TAMBAH KOTA
+4. WILAYAH DIPILIH
+5. CARI DATA LAIN
+6. NO BLACKLIST
+7. HUBUNGI ADMIN"""
     await update.message.reply_text(txt, reply_markup=kb_main(uid))
 
 
@@ -1723,7 +1724,7 @@ Bot akan cari di history WA yang dishare pengirim!
         context.user_data["paket_pilih"]=pkey; context.user_data["paket_type"]=ptype
         if ptype=="tambah": p=PAKET_TAMBAH.get(pkey,PAKET_TAMBAH["1minggu"])
         else: p=PAKET_CARI.get(pkey,PAKET_CARI["1minggu"])
-        text = f"{REKENING_TEXT}\n\n🎁 PAKET DIPILIH: {p['nama']} - Rp {p['harga']:,}\n\n*⚠️ PENTING!*\nKetik NAMA KOTA yang mau diaktifkan di caption foto transfer!\n\nSetelah transfer, kirim foto buktinya disini ya bos! 📸"
+        text = f"{REKENING_TEXT}\n\n🎁 PAKET DIPILIH: {p['nama']} - Rp {p['harga']:,}\n\n*⚠️ PENTING!*\nKetik NAMA KOTA yang mau diaktifkan di caption foto transfer!\n\nSetelah transfer, kirim foto buktinya disini ya! 📸"
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Kembali", callback_data=f"topup_{ptype}")]])
         await q.message.delete()
         await context.bot.send_message(chat_id=uid, text=text, reply_markup=kb)
@@ -1785,7 +1786,7 @@ Bot akan cari di history WA yang dishare pengirim!
                     
                 save_db()
                 await q.message.edit_caption(caption=(q.message.caption or "")+f"\n\n✅ DISETUJUI - Aktif sampai {expire.strftime('%d/%m/%Y')}",reply_markup=None)
-                await context.bot.send_message(chat_id=target_uid,text=f"✅ TOP UP DISETUJUI ✅\n\n📦 Paket {p['nama']} untuk kota {kota_target} aktif sampai {expire.strftime('%d/%m/%Y')}\n🎉 Sekarang kamu bisa gunakan 1x kesempatan untuk ➕ TAMBAH KOTA!",reply_markup=kb_main(target_uid))
+                await context.bot.send_message(chat_id=target_uid,text=f"✅ TOP UP DISETUJUI ✅\n\n📦 Paket {p['nama']} untuk kota {kota_target} aktif sampai {expire.strftime('%d/%m/%Y')}\n🎉 Sekarang kamu bisa gunakan 1x kesempatan untuk 🌍 TAMBAH KOTA!",reply_markup=kb_main(target_uid))
             else:
                 p=PAKET_CARI.get(pkey,PAKET_CARI["1minggu"])
                 expire=datetime.now()+timedelta(days=p["hari"])
@@ -1878,12 +1879,12 @@ async def text_handler(update,context):
 Grup : {h.get('group')}
 Pengirim : {h.get('sender')}
 No WhatsApp : {h.get('number')}
-━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━
 
 ISI PESAN
 {h.get('text')}
-━━━━━━━━━━━━━━
-⚠️ Perhatian : untuk tetap waspada dan hati-hati disarankan untuk rekber, terimakasih 🙏"""
+━━━━━━━━━━━━━━━━━━━
+⚠️ Perhatian : untuk tetap waspada dan hati-hati disarankan untuk rekber, terimakasih.Sumber: https://t.me/Aakiwkiw_bot 🙏"""
                 try:
                     if clean:
                         kb=kb_hasil_cari(clean)
@@ -1994,12 +1995,11 @@ ISI PESAN
 Grup : {h.get('group')}
 Pengirim : {h.get('sender')}
 No WhatsApp : {h.get('number')}
-━━━━━━━━━━━━━━
-
+━━━━━━━━━━━━━━━━━━━
 ISI PESAN
 {h.get('text')}
-━━━━━━━━━━━━━━
-⚠️ Perhatian : untuk tetap waspada dan hati-hati disarankan untuk rekber, terimakasih 🙏"""
+━━━━━━━━━━━━━━━━━━━
+⚠️ Perhatian : untuk tetap waspada dan hati-hati disarankan untuk rekber, terimakasih.Sumber: https://t.me/Aakiwkiw_bot 🙏"""
                 try:
                     if clean:
                         kb=kb_hasil_cari(clean)
