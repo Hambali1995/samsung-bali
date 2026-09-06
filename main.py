@@ -844,7 +844,7 @@ def kb_main(uid):
     keyboard=[
         [InlineKeyboardButton("👤 PROFIL", callback_data="menu_profil"), InlineKeyboardButton("📊 CEK STATUS", callback_data="menu_status")],
         [InlineKeyboardButton("🌍 TAMBAH KOTA", callback_data="menu_tambah_kota"), InlineKeyboardButton("🌠 WILAYAH DIPILIH", callback_data="menu_wilayah")],
-        [InlineKeyboardButton("🔎 CARI DATA LAIN", callback_data="menu_cari_data"), InlineKeyboardButton("👁️ NO PANTAUAN", callback_data="menu_pantauan")],
+        [InlineKeyboardButton("🔎 CARI DATA LAIN", callback_data="menu_cari_data"), InlineKeyboardButton("📵 NO PANTAUAN", callback_data="menu_pantauan")],
         [InlineKeyboardButton("🧑‍💻 HUBUNGI ADMIN", callback_data="menu_hubungi_admin")],
     ]
     if is_admin(uid):
