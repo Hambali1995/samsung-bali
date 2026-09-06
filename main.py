@@ -862,7 +862,7 @@ def kb_main(uid):
     keyboard=[
         [InlineKeyboardButton("👤 PROFIL", callback_data="menu_profil"), InlineKeyboardButton("📊 CEK STATUS", callback_data="menu_status")],
         [InlineKeyboardButton("🌍 TAMBAH KOTA", callback_data="menu_tambah_kota"), InlineKeyboardButton("🌠 WILAYAH DIPILIH", callback_data="menu_wilayah")],
-        [InlineKeyboardButton("🔎 CARI DATA LAIN", callback_data="menu_cari_data"), InlineKeyboardButton("👁️ NO PANTAUAN", callback_data="menu_pantauan")],
+        [InlineKeyboardButton("🔎 CARI DATA LAIN", callback_data="menu_cari_data"), InlineKeyboardButton("📵 NO PANTAUAN", callback_data="menu_pantauan")],
         [InlineKeyboardButton("🧑‍💻 HUBUNGI ADMIN", callback_data="menu_hubungi_admin")],
     ]
     if is_admin(uid):
@@ -1206,7 +1206,7 @@ async def start(update,context):
         if "kotas" not in db["user_info"][str(uid)]: db["user_info"][str(uid)]["kotas"]=[]
         if "saldo" not in db["user_info"][str(uid)]: db["user_info"][str(uid)]["saldo"]=0
     save_db()
-    txt = """🟢 MODE DI AKTIFKAN
+    txt = """🟢 MODE ON DI AKTIFKAN
 ━━━━━━━━━━━━━━━
 👋 Selamat datang, SAHABAT JHT! Gimana kabarnya nih, saya berharap kabar baik-baik saja yah, tetap semangat dan jangan lupa bersyukur. Silahkan pilih menu di bawah ini : 👇
 1. PROFIL
@@ -1214,7 +1214,7 @@ async def start(update,context):
 3. TAMBAH KOTA
 4. WILAYAH DIPILIH
 5. CARI DATA LAIN
-6. NO BLACKLIST
+6. NO PANTAUAN
 7. HUBUNGI ADMIN"""
     await update.message.reply_text(txt, reply_markup=kb_main(uid))
 
@@ -1225,7 +1225,7 @@ async def cb_handler(update,context):
     if data=="back_main":
         try: await q.message.delete()
         except: pass
-        txt = """🟢 MODE DI AKTIFKAN
+        txt = """🟢 MODE ON DI AKTIFKAN
 ━━━━━━━━━━━━━━━
 👋 Selamat datang, SAHABAT JHT! Gimana kabarnya nih, saya berharap kabar baik-baik saja yah, tetap semangat dan jangan lupa bersyukur. Silahkan pilih menu di bawah ini : 👇"""
         await context.bot.send_message(chat_id=uid, text=txt, reply_markup=kb_main(uid))
