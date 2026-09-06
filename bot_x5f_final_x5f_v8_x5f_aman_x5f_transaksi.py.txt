@@ -1152,7 +1152,7 @@ async def start(update,context):
         if "kotas" not in db["user_info"][str(uid)]: db["user_info"][str(uid)]["kotas"]=[]
         if "saldo" not in db["user_info"][str(uid)]: db["user_info"][str(uid)]["saldo"]=0
     save_db()
-    txt = """🟢 MODE DI AKTIFKAN
+    txt = """🟢 MODE ON DI AKTIFKAN
 ━━━━━━━━━━━━━━━
 👋 Selamat datang, SAHABAT JHT! Gimana kabarnya nih, saya berharap kabar baik-baik saja yah, tetap semangat dan jangan lupa bersyukur. Silahkan pilih menu di bawah ini : 👇
 1. PROFIL
@@ -1171,7 +1171,7 @@ async def cb_handler(update,context):
     if data=="back_main":
         try: await q.message.delete()
         except: pass
-        txt = """🟢 MODE DI AKTIFKAN
+        txt = """🟢 MODE ON DI AKTIFKAN
 ━━━━━━━━━━━━━━━
 👋 Selamat datang, SAHABAT JHT! Gimana kabarnya nih, saya berharap kabar baik-baik saja yah, tetap semangat dan jangan lupa bersyukur. Silahkan pilih menu di bawah ini : 👇"""
         await context.bot.send_message(chat_id=uid, text=txt, reply_markup=kb_main(uid))
@@ -1381,9 +1381,9 @@ Bot akan cari di history WA yang dishare pengirim!
         total = len(bl)
         if total == 0:
             try:
-                await context.bot.send_message(chat_id=uid, text="👁️ NO PANTAUAN\n\n📭 Belum ada nomor pantauan\n📊 Total: 0 nomor", reply_markup=kb_blacklist_menu())
+                await context.bot.send_message(chat_id=uid, text="📵 NO PANTAUAN\n\n📭 Belum ada nomor pantauan\n📊 Total: 0 nomor", reply_markup=kb_blacklist_menu())
             except:
-                await context.bot.send_message(chat_id=uid, text="👁️ NO PANTAUAN\nTotal: 0 nomor", reply_markup=kb_back_main_only())
+                await context.bot.send_message(chat_id=uid, text="📵 NO PANTAUAN\nTotal: 0 nomor", reply_markup=kb_back_main_only())
             return
         
         # Kirim SEMUA nomor - tanpa keyboard dulu biar anti error
@@ -1428,7 +1428,7 @@ Bot akan cari di history WA yang dishare pengirim!
             pass
         bl = get_all_pantauan()
         total = len(bl)
-        header = f"👁️ NO PANTAUAN - SEMUA NOMOR ({total} nomor)\n\n"
+        header = f"📵 NO PANTAUAN - SEMUA NOMOR ({total} nomor)\n\n"
         msg = header
         for i, nomor in enumerate(bl, 1):
             msg += f"{i}. {nomor}\n"
@@ -2247,7 +2247,7 @@ async def cmd_backup(update,context):
     try:
         with open(DB_FILE,"r",encoding="utf-8") as f:
             data=json.load(f)
-        txt=f"💾 BACKUP DB\n👤 User: {len(data.get('user_info',{}))}\n🎁 Tambah: {len(data.get('langganan',{}))}\n🔎 Cari: {len(data.get('langganan_cari',{}))}\n👁️ Pantauan: {len(data.get('blacklist',[]))}"
+        txt=f"💾 BACKUP DB\n👤 User: {len(data.get('user_info',{}))}\n🎁 Tambah: {len(data.get('langganan',{}))}\n🔎 Cari: {len(data.get('langganan_cari',{}))}\n📵 Pantauan: {len(data.get('blacklist',[]))}"
         await update.message.reply_text(txt,reply_markup=kb_main(uid))
         await context.bot.send_document(chat_id=uid, document=open(DB_FILE,"rb"), filename="bot_database.json")
         if os.path.exists(DB_FILE_PERSISTENT):
