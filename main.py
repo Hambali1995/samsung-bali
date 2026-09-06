@@ -1246,8 +1246,8 @@ async def start(update,context):
         if "kotas" not in db["user_info"][str(uid)]: db["user_info"][str(uid)]["kotas"]=[]
         if "saldo" not in db["user_info"][str(uid)]: db["user_info"][str(uid)]["saldo"]=0
     save_db()
-    txt = """🟢 MODE DI AKTIFKAN
-━━━━━━━━━━━━━━━
+    txt = """🟢 MODE ON DI AKTIFKAN
+━━━━━━━━━━━━━━━━━━━━━
 👋 Selamat datang, SAHABAT JHT! Gimana kabarnya nih, saya berharap kabar baik-baik saja yah, tetap semangat dan jangan lupa bersyukur. Silahkan pilih menu di bawah ini : 👇
 1. PROFIL
 2. CEK STATUS
@@ -1266,7 +1266,7 @@ async def cb_handler(update,context):
         try: await q.message.delete()
         except: pass
         txt = """🟢 MODE ON DI AKTIFKAN
-━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━
 👋 Selamat datang, SAHABAT JHT! Gimana kabarnya nih, saya berharap kabar baik-baik saja yah, tetap semangat dan jangan lupa bersyukur. Silahkan pilih menu di bawah ini : 👇"""
         await context.bot.send_message(chat_id=uid, text=txt, reply_markup=kb_main(uid))
         return
