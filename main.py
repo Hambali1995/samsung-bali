@@ -1387,19 +1387,19 @@ async def start(update,context):
         all_pkgs = db.get("langganan", {}).get(str(uid), []) + db.get("langganan_cari", {}).get(str(uid), [])
         if all_pkgs:
             paket_text = ", ".join([p.get("nama", p.get("paket","")) for p in all_pkgs[:3]])
-    txt = f"""╭ ───┈ " 🌹🌹🌹🌹🌹" ── ⬦ ׁ
-├   SEDULURAN BOT 
+    txt = f"""╭ ───┈ " 📩 📩 📩" ── ⬦ ׁ
+├ " ⭐  SEDULURAN BOT ⭐ "
 ╰─┈꯭─꯭──꯭─꯭─꯭──꯭─╌─꯭─꯭─꯭─꯭──꯭──꯭
-━━━━━━━━━━━━ ▪️▪️▪️
+━━━▪️━━━▪️━━━▪️━━━━▪️
 👤 Username: {username}
 🆔 User ID : {uid}
 📅 Invite : {invite_date}
 📲 Status : 🟢 Active
 📥 Paket : {paket_text}
-━━━━━━━━━━━━━▪️▪️▪️ 
+━━━▪️━━━▪️━━━▪️━━━━▪️
 
 🎉 Selamat datang {nama}, untuk mengaktifkan fitur ini silahkan pilih paket yang sudah ada, tetap semangat dan jangan lupa bersyukur untuk hari ini. 🔥
-━━━━━━━━━━━━━▪️▪️▪️
+━━━▪️━━━▪️━━━▪️━━━━▪️
 📝 BERKAH BERKAH BERKAH ..
 
 Gunakan tombol di bawah ini :👇"""
