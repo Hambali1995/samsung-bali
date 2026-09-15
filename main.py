@@ -1412,19 +1412,19 @@ async def start(update,context):
     else:
         status_text = "🔴 belum aktif segera aktifkan untuk memilih paket"
         paket_text = "belum ada paket"
-    txt = f"""╭ ───┈ " 🌹🌹🌹🌹🌹" ── ⬦ ׁ
-├   SEDULURAN BOT 
+    txt = f"""╭ ───┈ " 📩" ── ⬦ ׁ
+├  ⭐  SEDULURAN BOT  ⭐
 ╰─┈꯭─꯭──꯭─꯭─꯭──꯭─╌─꯭─꯭─꯭─꯭──꯭──꯭
-━━━━━━━━━━━━ ▪️▪️▪️
+━━━━━━━━━━━━ ▪️▪️
 👤 Username: {username}
 🆔 User ID : {uid}
 📅 Invite : {invite_date}
 📲 Status : {status_text}
 📥 Paket : {paket_text}
-━━━━━━━━━━━━━▪️▪️▪️ 
+━━━━━━━━━━━━━▪️▪️
 
 🎉 Selamat datang {nama}, untuk mengaktifkan fitur ini silahkan pilih paket yang sudah ada, tetap semangat dan jangan lupa bersyukur untuk hari ini. 🔥
-━━━━━━━━━━━━━▪️▪️▪️
+━━━━━━━━━━━━━▪️▪️
 📝 BERKAH BERKAH BERKAH ..
 
 Gunakan tombol di bawah ini :👇"""
