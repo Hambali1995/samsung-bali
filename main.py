@@ -1427,8 +1427,8 @@ async def start(update,context):
     else:
         status_text = "🔴 belum aktif segera aktifkan untuk memilih paket"
         paket_text = "belum ada paket"
-    txt = f"""╭ ───┈ " 🌹🌹🌹🌹🌹" ── ⬦ ׁ
-├   SEDULURAN BOT 
+    txt = f"""╭ ───┈ " ⭐⭐⭐⭐⭐" ── ⬦ ׁ
+├   ➖ SEDULURAN BOT ➖
 ╰─┈꯭─꯭──꯭─꯭─꯭──꯭─╌─꯭─꯭─꯭─꯭──꯭──꯭
 ━━━━━━━━━━━━ ▪️▪️▪️
 👤 Username: {username}
