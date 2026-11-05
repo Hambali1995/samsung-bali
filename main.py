@@ -3299,7 +3299,7 @@ No WhatsApp : {h.get('number')}
                 msg=f"""Grup : {h.get('group')}
 Pengirim : {h.get('sender')}
 No WhatsApp : {h.get('number')}
-━━━━━━━━━━━━━━━━━━━
+
 {h.get('text')}
 ━━━━━━━━━━━━━━━━━━━
 ⚠️ Perhatian : Untuk tetap waspada dan berhati-hati disarankan "REKBER" Terimakasih.🙏🏼"""
