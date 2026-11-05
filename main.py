@@ -27,7 +27,7 @@ DB_FILE_PERSISTENT = "/data/bot_database.json"
 WA_HISTORY_FILE = "wa_history.json"
 WA_HISTORY_PERSISTENT = "/data/wa_history.json"
 PORT = int(os.getenv("PORT", 8080))
-RAILWAY_URL = "https://samsung-bali-production.up.railway.app"
+RAILWAY_URL = "samsung-bali-production-6422.up.railway.app"
 
 # ========== SUPABASE / PASADATA ==========
 # Tabel: bot_data
