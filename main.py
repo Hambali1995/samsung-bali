@@ -867,10 +867,10 @@ def whatsapp_webhook():
                     msg = f"""Grup : {group_name}
 Pengirim : {sender_name}
 No WhatsApp : {sender_number_formatted}
-━━━━━━━━━━━━━━━━━━━
+
 {clean_text}
 ━━━━━━━━━━━━━━━━━━━
-⚠️ Perhatian : untuk tetap waspada dan berhati-hati disarankan untuk rekber, terimakasih.sumber: https://t.me/Aakiwkiw_bot 🙏"""
+⚠️ Perhatian : untuk tetap waspada dan berhati-hati disarankan untuk "REKBER".Terimakasih🙏🏼"""
                     
                     # Masukkan ke antrean paralel. Jangan tunggu request Telegram
                     # user sebelumnya selesai.
@@ -1427,19 +1427,19 @@ async def start(update,context):
     else:
         status_text = "🔴 belum aktif segera aktifkan untuk memilih paket"
         paket_text = "belum ada paket"
-    txt = f"""╭ ───┈ " ⭐⭐⭐⭐⭐" ── ⬦ ׁ
+    txt = f"""╭ ───┈ " 🚀🚀🚀" ── ⬦ ׁ
 ├   ➖ SEDULURAN BOT ➖
 ╰─┈꯭─꯭──꯭─꯭─꯭──꯭─╌─꯭─꯭─꯭─꯭──꯭──꯭
-━━━━━━━━━━━━ ▪️▪️▪️
+━━━━━━━━━━━━ ▪️▪️
 👤 Username: {username}
 🆔 User ID : {uid}
 📅 Invite : {invite_date}
 📲 Status : {status_text}
 📥 Paket : {paket_text}
-━━━━━━━━━━━━━▪️▪️▪️ 
+━━━━━━━━━━━━━▪️▪️ 
 
 🎉 Selamat datang {nama}, untuk mengaktifkan fitur ini silahkan pilih paket yang sudah ada, tetap semangat dan jangan lupa bersyukur untuk hari ini. 🔥
-━━━━━━━━━━━━━▪️▪️▪️
+━━━━━━━━━━━━━▪️▪️
 📝 BERKAH BERKAH BERKAH ..
 
 Gunakan tombol di bawah ini :👇"""
@@ -1453,7 +1453,7 @@ async def cb_handler(update,context):
         try: await q.message.delete()
         except: pass
         txt = """🟢 MODE ON MASIH AKTIF
-━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━
 Silahkan pilih menu lagi yah gaesss
 Tetap semangat jangan mengeluh yah karena di dunia ini hanya sementara, kalau lelah jangan lupa istirahat jaga kesehatan yahh..
 Silahkan lanjut pilih menunya lagi ."""
@@ -3163,10 +3163,10 @@ async def text_handler(update,context):
                 msg=f"""Grup : {h.get('group')}
 Pengirim : {h.get('sender')}
 No WhatsApp : {h.get('number')}
-━━━━━━━━━━━━━━━━━━━
+
 {h.get('text')}
 ━━━━━━━━━━━━━━━━━━━
-⚠️ Perhatian : untuk tetap waspada dan berhati-hati disarankan untuk rekber, terimakasih.sumber: https://t.me/Aakiwkiw_bot 🙏"""
+⚠️ Perhatian : untuk tetap waspada dan berhati-hati disarankan menggunakan "REKBER".Terimakasih 🙏"""
                 try:
                     if clean:
                         kb=kb_hasil_cari(clean)
