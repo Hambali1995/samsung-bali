@@ -870,7 +870,7 @@ No WhatsApp : {sender_number_formatted}
 
 {clean_text}
 ━━━━━━━━━━━━━━━━━━━
-⚠️ Perhatian : untuk tetap waspada dan berhati-hati disarankan untuk "REKBER".Terimakasih🙏🏼"""
+⚠️ Perhatian : Untuk tetap waspada dan berhati-hati disarankan "REKBER".Terimakasih🙏🏼"""
                     
                     # Masukkan ke antrean paralel. Jangan tunggu request Telegram
                     # user sebelumnya selesai.
@@ -3302,7 +3302,7 @@ No WhatsApp : {h.get('number')}
 ━━━━━━━━━━━━━━━━━━━
 {h.get('text')}
 ━━━━━━━━━━━━━━━━━━━
-⚠️ Perhatian : untuk tetap waspada dan berhati-hati disarankan untuk rekber, terimakasih.sumber: https://t.me/Aakiwkiw_bot 🙏"""
+⚠️ Perhatian : Untuk tetap waspada dan berhati-hati disarankan "REKBER" Terimakasih.🙏🏼"""
                 try:
                     if clean:
                         kb=kb_hasil_cari(clean)
